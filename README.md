@@ -632,4 +632,4 @@ You may freely use, modify, distribute, and commercialize this software. The Apa
 
 See the [LICENSE](LICENSE) file for the full legal text.
 
-Copyright &copy; 2026 Ravuri Rithesh Venkata Sai Manikanta. All rights reserved.
+Copyright &copy; 2026 Ravuri Rithesh Venkata Sai Mani. All rights reserved.
