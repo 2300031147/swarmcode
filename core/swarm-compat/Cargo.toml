@@ -1,0 +1,12 @@
+[package]
+name = "swarm-compat"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+swarm-commands = { path = "../swarm-commands" }
+swarm-tools = { path = "../swarm-tools" }
+swarm-runtime = { path = "../swarm-runtime" }
+
+[lints]
+workspace = true

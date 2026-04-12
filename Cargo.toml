@@ -1,0 +1,39 @@
+[workspace]
+members = [
+    "core/swarm-api",
+    "core/swarm-runtime",
+    "core/swarm-tools",
+    "core/swarm-commands",
+    "core/swarm-plugins",
+    "core/swarm-server",
+    "core/swarm-lsp",
+    "core/swarm-compat",
+    
+    # Unified Swarm subsystems
+    "swarm-matrix",
+    "swarm-senses",
+    "swarm-hands",
+    "swarm-master",
+
+    # Desktop GUI
+    "swarm-gui/src-tauri",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+lsp-types = "0.97"
+serde_json = "1.0"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_panics_doc = "allow"
+missing_errors_doc = "allow"

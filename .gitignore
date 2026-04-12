@@ -1,0 +1,33 @@
+# Rust / Cargo
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# Node / JS / React
+/node_modules/
+**/node_modules/
+npm-debug.log
+yarn-error.log
+/dist/
+/.next/
+/.nuxt/
+
+# Tauri
+/swarm-gui/src-tauri/target/
+/swarm-gui/frontend/dist/
+
+# Env & Configs
+.env
+.env.local
+.env.*.local
+.DS_Store
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project specific
+/scratch/
+/logs/

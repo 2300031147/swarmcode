@@ -1,0 +1,11 @@
+[package]
+name = "swarm-matrix"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+swarm-runtime = { path = "../core/swarm-runtime" }
+swarm-commands = { path = "../core/swarm-commands" }
+ratatui = "0.26.0"
+crossterm = "0.27.0"
+tokio = { version = "1.36", features = ["full"] }

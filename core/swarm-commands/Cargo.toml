@@ -1,0 +1,13 @@
+[package]
+name = "swarm-commands"
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+swarm-api = { path = "../swarm-api" }
+swarm-plugins = { path = "../swarm-plugins" }
+swarm-runtime = { path = "../swarm-runtime" }
+serde_json.workspace = true

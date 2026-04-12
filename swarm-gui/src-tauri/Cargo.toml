@@ -1,0 +1,49 @@
+[package]
+name = "swarm-gui"
+version.workspace = true
+edition.workspace = true
+# Tauri requires the binary to be named the same as the package
+default-run = "swarm-gui"
+
+[lints]
+workspace = true
+
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Tauri core
+tauri          = { version = "2", features = ["macos-private-api"] }
+tauri-plugin-fs     = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-shell  = "2"
+tauri-plugin-process = "2"
+tauri-plugin-notification = "2"
+
+# SwarmCode internal crates
+swarm-api      = { path = "../../core/swarm-api" }
+swarm-runtime  = { path = "../../core/swarm-runtime" }
+swarm-commands = { path = "../../core/swarm-commands" }
+swarm-plugins  = { path = "../../core/swarm-plugins" }
+swarm-senses   = { path = "../../swarm-senses" }
+swarm-hands    = { path = "../../swarm-hands" }
+swarm-matrix   = { path = "../../swarm-matrix" }
+swarm-master   = { path = "../../swarm-master" }
+
+# Async + serialization
+tokio    = { version = "1", features = ["full"] }
+serde    = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+# Utilities
+anyhow   = "1"
+thiserror = "1"
+tracing  = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+notify   = "6"           # file system watching
+walkdir  = "2"           # directory traversal
+
+[[bin]]
+name = "swarm-gui"
+path = "src/main.rs"
