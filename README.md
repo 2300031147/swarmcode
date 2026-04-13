@@ -67,22 +67,27 @@ graph TD;
 | **`swarm-gui`** | Frontend | Tauri v2 application wrapper and React (Vite) frontend. Native window management. |
 | **`swarm-api`** | Backend | Core AI prompt orchestration, token management, and LLM provider interfaces. |
 | **`swarm-runtime`**| Logic | The central nervous system regulating memory context, system state, and active agents. |
+| **`swarm-hive`** | Teamwork | Multi-agent coordination engine via asynchronous mailboxes and shared task lists. |
 | **`swarm-senses`** | Indexing | Tree-sitter powered abstract syntax tree mapping using Petgraph native execution. |
 | **`swarm-hands`** | E2E | Chromiumoxide-based deterministic web automation via Chrome DevTools Protocol. |
 | **`swarm-matrix`** | TUI | High-performance terminal rendering engine built on top of `ratatui`. |
 | **`swarm-master`** | CLI | Command-line parsing engine for CI/CD integrations or quick terminal usage. |
+| **`adversary`** | Security | Proactive inspector for detecting malicious patterns in AI outputs before execution. |
 
 ---
 
 ## ✨ Key Features
 
 - **Interactive GUI & TUI**: Built with React/Tauri for a premium desktop experience, with a seamless Ratatui terminal fallback.
-- **Dynamic Agent Swarms**: Create specialized teams (e.g., QA, Security, Architect) that communicate and solve tasks in parallel.
+- **Dynamic Agent Swarms (Hive Intelligence)**: Create specialized teams (e.g., QA, Security, Architect) that communicate asynchronously and solve tasks in parallel via the SwarmHive.
+- **Hierarchical Memory Store**: Persistent, scoped memory (Global vs Local) with tagged record boundaries for consistent agent recall across sessions.
 - **Multiple AI Providers**: Native support for Anthropic Claude, OpenAI, Google Gemini, Groq, Ollama (Local), and Mistral.
 - **SwarmSenses (Deep Code Search)**: Uses Tree-Sitter and Petgraph to build an AST-based knowledge graph. Search by functions, classes, and logic rather than plain text.
 - **SwarmHands (Browser Automation)**: A dedicated WebAgent using `chromiumoxide`. It can visually navigate websites, extract data, or test login flows either in headless mode or with an actively visible DOM.
 - **Integrated Terminal Execution**: Safe, user-approved sandbox execution of terminal commands directly from the AI.
+- **Adversarial Safety Inspector**: Proactive auditing of model responses to prevent command injection, path traversal, and "runaway" output generation.
 - **Single Native Binary**: Compiles down to a single Windows `.exe` (or Linux AppImage/macOS .app) with all subsystems baked in.
+- **Bootstrap Autopilot**: Multi-phase project initialization that guides a codebase from cold-start to active development.
 - **Auto-Compaction Memory Management**: Seamlessly summarize past context thresholds to ensure long-running sessions never run out of tokens.
 
 ---
@@ -104,6 +109,22 @@ The `WebAgent` module connects natively to system Chrome/Chromium installation v
 
 ### SwarmMatrix (TUI)
 For Linux server environments or developers who hate leaving their `tmux` session, SwarmMatrix wraps the entire intelligence engine in a keyboard-driven terminal dashboard. It shares 100% of the cognitive engine as the desktop GUI. It uses `ratatui` with immediate-mode rendering for instant frame-rate drops.
+
+### SwarmHive (Multi-Agent Team)
+SwarmHive is the management layer that allows multiple agents to coordinate on a single project.
+* **Asynchronous Mailboxes**: Each agent has an independent `inbox` where they can receive messages from other Hive members without blocking the main event loop.
+* **Shared Task List**: A centralized task board (`TeamTask`) allows agents to claim, update, and finalize tasks synchronously.
+* **Persistent Team State**: The entire state of the swarm (messages, task status, member health) is persisted to the workspace, allowing teams to resume work after a restart.
+
+### MemoryStore (Global & Local Persistence)
+MemoryStore provides a hierarchical layer of "long-term" memory for agents.
+* **Scoped Memory**: Supports `Global` scope (machine-wide settings and general knowledge) and `Local` scope (project-specific patterns, styling rules, or architecture decisions).
+* **Tagged Records**: Memories are stored as tagged text records inside robust boundaries (`--- RECORD ---`), enabling high-precision retrieval without data corruption.
+
+### UI Thinking & Visual Blocks
+The SwarmCode GUI provides deep visibility into the AI's internal state via specialized message blocks.
+* **ThinkingBlock**: Renders the agent's internal reasoning process in a collapsible, interactive UI element.
+* **VisualBlock**: Dynamically renders structured data, including charts, diagrams, and generated artifacts, directly within the chat stream.
 
 ---
 
