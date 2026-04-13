@@ -28,10 +28,10 @@ impl ModelPricing {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct TokenUsage {
-    pub input_tokens: u32,
-    pub output_tokens: u32,
-    pub cache_creation_input_tokens: u32,
-    pub cache_read_input_tokens: u32,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub cache_read_input_tokens: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -55,7 +55,7 @@ impl UsageCostEstimate {
 #[must_use]
 pub fn pricing_for_model(model: &str) -> Option<ModelPricing> {
     let normalized = model.to_ascii_lowercase();
-    if normalized.contains("swarm-lite") {
+    if normalized.contains("swarm-lite") || normalized.contains("haiku") {
         return Some(ModelPricing {
             input_cost_per_million: 1.0,
             output_cost_per_million: 5.0,
@@ -71,7 +71,7 @@ pub fn pricing_for_model(model: &str) -> Option<ModelPricing> {
             cache_read_cost_per_million: 1.5,
         });
     }
-    if normalized.contains("swarm-standard") {
+    if normalized.contains("swarm-standard") || normalized.contains("sonnet") {
         return Some(ModelPricing::default_standard_tier());
     }
     None
@@ -79,7 +79,7 @@ pub fn pricing_for_model(model: &str) -> Option<ModelPricing> {
 
 impl TokenUsage {
     #[must_use]
-    pub fn total_tokens(self) -> u32 {
+    pub fn total_tokens(self) -> u64 {
         self.input_tokens
             + self.output_tokens
             + self.cache_creation_input_tokens
@@ -164,7 +164,7 @@ pub fn format_usd(amount: f64) -> String {
 pub struct UsageTracker {
     latest_turn: TokenUsage,
     cumulative: TokenUsage,
-    turns: u32,
+    turns: u64,
 }
 
 impl UsageTracker {
@@ -208,7 +208,7 @@ impl UsageTracker {
     }
 
     #[must_use]
-    pub fn turns(&self) -> u32 {
+    pub fn turns(&self) -> u64 {
         self.turns
     }
 }

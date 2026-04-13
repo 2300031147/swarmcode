@@ -166,6 +166,8 @@ impl HookRunner {
         child.stdin(std::process::Stdio::piped());
         child.stdout(std::process::Stdio::piped());
         child.stderr(std::process::Stdio::piped());
+        child.current_dir(request.cwd);
+        crate::subprocess::scrub_env(&mut child.command);
         child.env("HOOK_EVENT", request.event.as_str());
         child.env("HOOK_TOOL_NAME", request.tool_name);
         child.env("HOOK_TOOL_INPUT", request.tool_input);

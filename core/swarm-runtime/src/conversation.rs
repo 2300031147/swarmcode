@@ -8,7 +8,12 @@ use crate::compact::{
 use crate::config::RuntimeFeatureConfig;
 use crate::hooks::{HookRunResult, HookRunner};
 use crate::hive::SwarmHive;
-use crate::permissions::{PermissionOutcome, PermissionPolicy, PermissionPrompter};
+use crate::memory::{MemoryStore, MemoryScope};
+use crate::platform_security::{
+    AdversaryDecision, AdversaryInspector, PatternMatcher, RiskLevel,
+    large_response::LargeResponseHandler,
+};
+use crate::prompt::{SystemPromptBuilder};
 use crate::session::{ContentBlock, ConversationMessage, Session};
 use crate::usage::{TokenUsage, UsageTracker};
 
@@ -22,6 +27,7 @@ pub struct ApiRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AssistantEvent {
     TextDelta(String),
+    ThoughtDelta(String),
     ToolUse {
         id: String,
         name: String,
@@ -96,12 +102,11 @@ pub struct ConversationRuntime<C, T> {
     api_client: C,
     tool_executor: T,
     permission_policy: PermissionPolicy,
-    system_prompt: Vec<String>,
-    max_iterations: usize,
-    usage_tracker: UsageTracker,
-    hook_runner: HookRunner,
-    team_hub: Option<Arc<SwarmHive>>,
     agent_id: Option<String>,
+    security_patterns: PatternMatcher,
+    large_response_handler: LargeResponseHandler,
+    memory_store: MemoryStore,
+    prompt_template: SystemPromptBuilder,
 }
 
 impl<C, T> ConversationRuntime<C, T>
@@ -115,14 +120,14 @@ where
         api_client: C,
         tool_executor: T,
         permission_policy: PermissionPolicy,
-        system_prompt: Vec<String>,
+        prompt_template: SystemPromptBuilder,
     ) -> Self {
         Self::new_with_features(
             session,
             api_client,
             tool_executor,
             permission_policy,
-            system_prompt,
+            prompt_template,
             RuntimeFeatureConfig::default(),
         )
     }
@@ -133,21 +138,27 @@ where
         api_client: C,
         tool_executor: T,
         permission_policy: PermissionPolicy,
-        system_prompt: Vec<String>,
+        prompt_template: SystemPromptBuilder,
         feature_config: RuntimeFeatureConfig,
     ) -> Self {
         let usage_tracker = UsageTracker::from_session(&session);
+        let cwd = prompt_template.project_context().map(|pc| pc.cwd.clone()).unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        let memory_store = MemoryStore::new(&cwd);
+        
         Self {
             session,
             api_client,
             tool_executor,
             permission_policy,
-            system_prompt,
+            prompt_template,
             max_iterations: usize::MAX,
             usage_tracker,
             hook_runner: HookRunner::from_feature_config(&feature_config),
             team_hub: None,
             agent_id: None,
+            security_patterns: PatternMatcher::new(),
+            large_response_handler: LargeResponseHandler::new(),
+            memory_store,
         }
     }
 
@@ -208,8 +219,15 @@ where
                 }
             }
 
+            // ── Dynamic Prompt: Rebuild with memories ───────────────
+            let memories = self.memory_store.retrieve_all(MemoryScope::Global).unwrap_or_default();
+            // Note: We could merge local memories here too.
+            let active_prompt = self.prompt_template.clone()
+                .with_memories(memories)
+                .build();
+
             let request = ApiRequest {
-                system_prompt: self.system_prompt.clone(),
+                system_prompt: active_prompt,
                 messages: self.session.messages.clone(),
                 agent_id: self.agent_id.clone(),
             };
@@ -238,6 +256,90 @@ where
             }
 
             for (tool_use_id, tool_name, input) in pending_tool_uses {
+                // ── Memory Tools ────────────────────────────────────────
+                if tool_name == "remember_memory" {
+                    // Internal memory tool logic
+                    let result_message = self.handle_remember_memory(&tool_use_id, &input);
+                    self.session.messages.push(result_message.clone());
+                    tool_results.push(result_message);
+                    continue;
+                }
+                if tool_name == "retrieve_memories" {
+                    let result_message = self.handle_retrieve_memories(&tool_use_id, &input);
+                    self.session.messages.push(result_message.clone());
+                    tool_results.push(result_message);
+                    continue;
+                }
+
+                // ── Visual Tools ────────────────────────────────────────
+                if tool_name == "render_mermaid" {
+                    let output = crate::visuals::render_mermaid(&input);
+                    let result_message = ConversationMessage::tool_result(
+                        tool_use_id,
+                        tool_name,
+                        output,
+                        false,
+                    );
+                    self.session.messages.push(result_message.clone());
+                    tool_results.push(result_message);
+                    continue;
+                }
+                if tool_name == "render_bar_chart" {
+                    let output = crate::visuals::render_bar_chart_from_json(&input);
+                    let result_message = ConversationMessage::tool_result(
+                        tool_use_id,
+                        tool_name,
+                        output,
+                        false,
+                    );
+                    self.session.messages.push(result_message.clone());
+                    tool_results.push(result_message);
+                    continue;
+                }
+                
+                // ── Platform Security: Pattern Matching ─────────────────
+                let matches = self.security_patterns.scan(&input);
+                if self.security_patterns.has_critical_threats(&matches) {
+                    let first = &matches[0];
+                    let security_error = format!(
+                        "🛡️ Security Block: Critical threat detected ({}) in tool input: {}",
+                        first.threat.name, first.threat.description
+                    );
+                    let result_message = ConversationMessage::tool_result(
+                        tool_use_id,
+                        tool_name,
+                        security_error,
+                        true,
+                    );
+                    self.session.messages.push(result_message.clone());
+                    tool_results.push(result_message);
+                    continue;
+                }
+
+                // ── Platform Security: Adversary Inspection ─────────────
+                // Only run for "High Risk" tools or if patterns had any warnings
+                if tool_name == "bash" || !matches.is_empty() {
+                    // Note: We need a clone of the client if we want to stream twice, 
+                    // but since ApiClient usually isn't Clone, and we are in a mutable loop,
+                    // we can just use &mut self.api_client if the trait supports it.
+                    // For now, assume we can create a temporary inspector.
+                    let mut inspector = AdversaryInspector::new(&mut self.api_client);
+                    if let Ok(AdversaryDecision::Block { reason }) = 
+                        inspector.inspect(&tool_name, &input, &self.session.messages) 
+                    {
+                        let security_error = format!("🛡️ Adversary Blocked: {reason}");
+                        let result_message = ConversationMessage::tool_result(
+                            tool_use_id,
+                            tool_name,
+                            security_error,
+                            true,
+                        );
+                        self.session.messages.push(result_message.clone());
+                        tool_results.push(result_message);
+                        continue;
+                    }
+                }
+
                 let permission_outcome = if let Some(prompt) = prompter.as_mut() {
                     self.permission_policy
                         .authorize(&tool_name, &input, Some(*prompt))
@@ -259,7 +361,7 @@ where
                         } else {
                             let (mut output, mut is_error) =
                                 match self.tool_executor.execute(&tool_name, &input) {
-                                    Ok(output) => (output, false),
+                                    Ok(output) => (self.large_response_handler.handle_output(output), false),
                                     Err(error) => (error.to_string(), true),
                                 };
                             output = merge_hook_feedback(pre_hook_result.messages(), output, false);
@@ -337,31 +439,109 @@ where
     pub fn agent_id(&self) -> Option<&str> {
         self.agent_id.as_deref()
     }
+
+    fn handle_remember_memory(&self, id: &str, input: &str) -> ConversationMessage {
+        let Ok(val) = crate::json::JsonValue::parse(input) else {
+            return ConversationMessage::tool_result(id, "remember_memory", "Error: Input must be valid JSON", true);
+        };
+        let Some(obj) = val.as_object() else {
+            return ConversationMessage::tool_result(id, "remember_memory", "Error: Input must be a JSON object", true);
+        };
+        
+        let category = obj.get("category").and_then(|v| v.as_str()).unwrap_or("general");
+        let data = obj.get("data").and_then(|v| v.as_str()).unwrap_or("");
+        let is_global = obj.get("is_global").and_then(|v| v.as_bool()).unwrap_or(true);
+        let tags: Vec<String> = obj.get("tags")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+
+        let scope = if is_global { MemoryScope::Global } else { MemoryScope::Local };
+        match self.memory_store.remember(scope, category, data, &tags) {
+            Ok(_) => ConversationMessage::tool_result(id, "remember_memory", format!("✅ Memory stored in category: {category}"), false),
+            Err(e) => ConversationMessage::tool_result(id, "remember_memory", format!("❌ Failed to store memory: {e}"), true),
+        }
+    }
+
+    fn handle_retrieve_memories(&self, id: &str, input: &str) -> ConversationMessage {
+        let Ok(val) = crate::json::JsonValue::parse(input) else {
+            return ConversationMessage::tool_result(id, "retrieve_memories", "Error: Input must be valid JSON", true);
+        };
+        let Some(obj) = val.as_object() else {
+            return ConversationMessage::tool_result(id, "retrieve_memories", "Error: Input must be a JSON object", true);
+        };
+
+        let category_filter = obj.get("category").and_then(|v| v.as_str()).unwrap_or("*");
+        let is_global = obj.get("is_global").and_then(|v| v.as_bool()).unwrap_or(true);
+        let scope = if is_global { MemoryScope::Global } else { MemoryScope::Local };
+
+        let result = if category_filter == "*" {
+            self.memory_store.retrieve_all(scope)
+        } else {
+            self.memory_store.retrieve(scope, category_filter).map(|m| {
+                let mut map = std::collections::HashMap::new();
+                map.insert(category_filter.to_string(), m.into_values().flatten().collect());
+                map
+            })
+        };
+
+        match result {
+            Ok(memories) => {
+                if memories.is_empty() {
+                    ConversationMessage::tool_result(id, "retrieve_memories", "No memories found for the specified criteria.", false)
+                } else {
+                    let mut lines = vec!["### Retrieved Memories:".to_string()];
+                    for (cat, entries) in memories {
+                        lines.push(format!("\n**Category: {cat}**"));
+                        for entry in entries {
+                            lines.push(format!("- {entry}"));
+                        }
+                    }
+                    ConversationMessage::tool_result(id, "retrieve_memories", lines.join("\n"), false)
+                }
+            }
+            Err(e) => ConversationMessage::tool_result(id, "retrieve_memories", format!("❌ Failed to retrieve memories: {e}"), true),
+        }
+    }
 }
 
 fn build_assistant_message(
     events: Vec<AssistantEvent>,
 ) -> Result<(ConversationMessage, Option<TokenUsage>), RuntimeError> {
-    let mut text = String::new();
+    let mut text_acc = String::new();
+    let mut thought_acc = String::new();
     let mut blocks = Vec::new();
-    let mut finished = false;
     let mut usage = None;
+    let mut finished = false;
 
     for event in events {
         match event {
-            AssistantEvent::TextDelta(delta) => text.push_str(&delta),
+            AssistantEvent::TextDelta(delta) => text_acc.push_str(&delta),
+            AssistantEvent::ThoughtDelta(delta) => thought_acc.push_str(&delta),
             AssistantEvent::ToolUse { id, name, input } => {
-                flush_text_block(&mut text, &mut blocks);
+                if !thought_acc.is_empty() {
+                    blocks.push(ContentBlock::Thought {
+                        text: std::mem::take(&mut thought_acc),
+                    });
+                }
+                if !text_acc.is_empty() {
+                    blocks.push(ContentBlock::Text {
+                        text: std::mem::take(&mut text_acc),
+                    });
+                }
                 blocks.push(ContentBlock::ToolUse { id, name, input });
             }
-            AssistantEvent::Usage(value) => usage = Some(value),
-            AssistantEvent::MessageStop => {
-                finished = true;
-            }
+            AssistantEvent::Usage(u) => usage = Some(u),
+            AssistantEvent::MessageStop => finished = true,
         }
     }
 
-    flush_text_block(&mut text, &mut blocks);
+    if !thought_acc.is_empty() {
+        blocks.push(ContentBlock::Thought { text: thought_acc });
+    }
+    if !text_acc.is_empty() {
+        blocks.push(ContentBlock::Text { text: text_acc });
+    }
 
     if !finished {
         return Err(RuntimeError::new(

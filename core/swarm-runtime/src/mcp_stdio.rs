@@ -8,9 +8,8 @@ use serde_json::Value as JsonValue;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
-use crate::config::{McpTransport, RuntimeConfig, ScopedMcpServerConfig};
-use crate::mcp::mcp_tool_name;
 use crate::mcp_client::{McpClientBootstrap, McpClientTransport, McpStdioTransport};
+use crate::subprocess::SubprocessExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(untagged)]
@@ -236,6 +235,9 @@ pub enum McpServerManagerError {
     UnknownServer {
         server_name: String,
     },
+    Timeout {
+        server_name: String,
+    },
 }
 
 impl std::fmt::Display for McpServerManagerError {
@@ -263,6 +265,7 @@ impl std::fmt::Display for McpServerManagerError {
                 write!(f, "unknown MCP tool `{qualified_name}`")
             }
             Self::UnknownServer { server_name } => write!(f, "unknown MCP server `{server_name}`"),
+            Self::Timeout { server_name } => write!(f, "MCP server `{server_name}` timed out"),
         }
     }
 }
@@ -376,14 +379,17 @@ impl McpServerManager {
                             details: "server process missing after initialization".to_string(),
                         }
                     })?;
-                    process
-                        .list_tools(
+                    tokio::time::timeout(
+                        std::time::Duration::from_secs(30),
+                        process.list_tools(
                             request_id,
                             Some(McpListToolsParams {
                                 cursor: cursor.clone(),
                             }),
                         )
-                        .await?
+                    ).await
+                    .map_err(|_| McpServerManagerError::Timeout { server_name: server_name.clone() })?
+                    .map_err(McpServerManagerError::Io)?
                 };
 
                 if let Some(error) = response.error {
@@ -455,8 +461,9 @@ impl McpServerManager {
                         details: "server process missing after initialization".to_string(),
                     }
                 })?;
-                process
-                    .call_tool(
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(60), // Tool calls can be longer
+                    process.call_tool(
                         request_id,
                         McpToolCallParams {
                             name: route.raw_name,
@@ -464,7 +471,9 @@ impl McpServerManager {
                             meta: None,
                         },
                     )
-                    .await?
+                ).await
+                .map_err(|_| McpServerManagerError::Timeout { server_name: route.server_name.clone() })?
+                .map_err(McpServerManagerError::Io)?
             };
         Ok(response)
     }
@@ -541,9 +550,12 @@ impl McpServerManager {
                         details: "server process missing before initialize".to_string(),
                     }
                 })?;
-                process
-                    .initialize(request_id, default_initialize_params())
-                    .await?
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(10),
+                    process.initialize(request_id, default_initialize_params())
+                ).await
+                .map_err(|_| McpServerManagerError::Timeout { server_name: server_name.to_string() })?
+                .map_err(McpServerManagerError::Io)?
             };
 
             if let Some(error) = response.error {
@@ -584,7 +596,15 @@ impl McpStdioProcess {
             .args(&transport.args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit());
+            .stderr(Stdio::inherit())
+            .set_no_window();
+        
+        #[cfg(not(windows))]
+        if let Some(path) = crate::subprocess::merged_path() {
+            command.env("PATH", path);
+        }
+
+        crate::subprocess::scrub_env(&mut command);
         apply_env(&mut command, &transport.env);
 
         let mut child = command.spawn()?;

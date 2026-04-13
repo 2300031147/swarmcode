@@ -5,6 +5,8 @@ import { useChatStore } from "@/store/chat";
 import { useFilesStore } from "@/store/files";
 import { formatTokens, formatCost, formatTime } from "@/lib/utils";
 import { ChatMessage } from "@/lib/tauri";
+import ThinkingBlock from "./ThinkingBlock";
+import VisualBlock from "./VisualBlock";
 
 export default function ChatPanel() {
   const {
@@ -169,15 +171,76 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         {message.role === "user" ? "You" : "AI"}
       </div>
       <div className="chat-message-body selectable">
-        {message.role === "assistant" ? (
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {message.content}
-          </ReactMarkdown>
-        ) : (
-          <pre style={{ whiteSpace: "pre-wrap", fontFamily: "var(--font-ui)", margin: 0 }}>
-            {message.content}
-          </pre>
-        )}
+        {(() => {
+          if (message.role === "assistant") {
+            try {
+              // Attempt to parse structured blocks from the backend
+              const data = JSON.parse(message.content);
+              if (data && Array.from(data.blocks || []).length > 0) {
+                return (data.blocks as any[]).map((block, idx) => {
+                  if (block.type === "thought") {
+                    return <ThinkingBlock key={idx} content={block.text} />;
+                  }
+                  if (block.type === "text") {
+                    // Check for embedded visual content markers
+                    const visualMarkers = block.text.split(/--- VISUAL CONTENT Start \(([^)]+)\) ---\n([\s\S]*?)\n--- VISUAL CONTENT End ---/);
+                    
+                    if (visualMarkers.length > 1) {
+                      const elements = [];
+                      for (let i = 0; i < visualMarkers.length; i++) {
+                        if (i % 3 === 0) {
+                          // Text part
+                          if (visualMarkers[i].trim()) {
+                            elements.push(
+                              <ReactMarkdown key={`text-${idx}-${i}`} remarkPlugins={[remarkGfm]}>
+                                {visualMarkers[i]}
+                              </ReactMarkdown>
+                            );
+                          }
+                        } else if (i % 3 === 1) {
+                          // MIME type
+                          const mimeType = visualMarkers[i];
+                          const html = visualMarkers[i+1];
+                          elements.push(<VisualBlock key={`viz-${idx}-${i}`} html={html} mimeType={mimeType} />);
+                        }
+                      }
+                      return <div key={idx}>{elements}</div>;
+                    }
+
+                    return (
+                      <ReactMarkdown key={idx} remarkPlugins={[remarkGfm]}>
+                        {block.text}
+                      </ReactMarkdown>
+                    );
+                  }
+                  if (block.type === "tool_use") {
+                    return (
+                      <div key={idx} className="tool-call-indicator mb-2 p-2 border border-dashed rounded text-xs text-muted-foreground bg-bg-2">
+                         🔧 Executing: <strong>{block.name}</strong>
+                      </div>
+                    );
+                  }
+                  return null;
+                });
+              }
+            } catch (e) {
+              // Not JSON or legacy content, fallback to markdown
+            }
+
+            return (
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {message.content}
+              </ReactMarkdown>
+            );
+          } else {
+            // User messages show as pre-wrap or markdown if preferred
+            return (
+              <pre style={{ whiteSpace: "pre-wrap", fontFamily: "var(--font-ui)", margin: 0 }}>
+                {message.content}
+              </pre>
+            );
+          }
+        })()}
       </div>
       <div className="chat-message-meta">
         <span>{formatTime(message.timestamp_ms)}</span>

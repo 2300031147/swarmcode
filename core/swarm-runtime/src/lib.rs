@@ -14,9 +14,12 @@ mod oauth;
 mod permissions;
 mod prompt;
 mod remote;
-pub mod sandbox;
-mod session;
-mod usage;
+mod platform_security;
+pub mod session;
+pub mod subprocess;
+pub mod usage;
+pub mod visuals;
+mod memory;
 
 pub use swarm_lsp::{
     FileDiagnostics, LspContextEnrichment, LspError, LspManager, LspServerConfig,
@@ -81,10 +84,15 @@ pub use remote::{
     RemoteSessionContext, UpstreamProxyBootstrap, UpstreamProxyState, SWARM_REMOTE_BASE_URL,
     SWARM_SESSION_TOKEN_PATH, SWARM_SYSTEM_CA_BUNDLE, SWARM_NO_PROXY_HOSTS, SWARM_PROXY_ENV_KEYS,
 };
+pub use platform_security::{
+    AdversaryDecision, AdversaryInspector, PatternMatch, PatternMatcher, RiskLevel,
+    ThreatCategory, ThreatPattern, THREAT_PATTERNS,
+};
 pub use session::{ContentBlock, ConversationMessage, MessageRole, Session, SessionError};
 pub use usage::{
     format_usd, pricing_for_model, ModelPricing, TokenUsage, UsageCostEstimate, UsageTracker,
 };
+pub use memory::{MemoryStore, MemoryScope};
 pub use hive::{
     SwarmHive, HiveMember, HiveMemberStatus, HiveMessage, HiveRole, team_message,
 };

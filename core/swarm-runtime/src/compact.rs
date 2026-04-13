@@ -101,23 +101,43 @@ pub fn compact_session(session: &Session, config: CompactionConfig) -> Compactio
         .first()
         .and_then(extract_existing_compacted_summary);
     let compacted_prefix_len = usize::from(existing_summary.is_some());
-    let keep_from = session
+    let keep_recent_from = session
         .messages
         .len()
         .saturating_sub(config.preserve_recent_messages);
-    let removed = &session.messages[compacted_prefix_len..keep_from];
-    let preserved = session.messages[keep_from..].to_vec();
+    
+    // Middle-out: Preserve the very first user message (often the "Initial Task")
+    // if it's not already summarized.
+    let mut initial_task = None;
+    if compacted_prefix_len == 0 {
+        initial_task = session.messages.iter()
+            .find(|m| m.role == MessageRole::User)
+            .cloned();
+    }
+
+    let removed = &session.messages[compacted_prefix_len..keep_recent_from];
+    let preserved_recent = session.messages[keep_recent_from..].to_vec();
+    
     let summary =
         merge_compact_summaries(existing_summary.as_deref(), &summarize_messages(removed));
     let formatted_summary = format_compact_summary(&summary);
-    let continuation = get_compact_continuation_message(&summary, true, !preserved.is_empty());
+    let continuation = get_compact_continuation_message(&summary, true, !preserved_recent.is_empty());
 
     let mut compacted_messages = vec![ConversationMessage {
         role: MessageRole::System,
         blocks: vec![ContentBlock::Text { text: continuation }],
         usage: None,
     }];
-    compacted_messages.extend(preserved);
+    
+    // Support Middle-Out by injecting the initial task after the summary if it was removed
+    if let Some(task) = initial_task {
+        // Only if the task wasn't in the preserved_recent block
+        if !preserved_recent.contains(&task) {
+           compacted_messages.push(task);
+        }
+    }
+
+    compacted_messages.extend(preserved_recent);
 
     CompactionResult {
         summary,

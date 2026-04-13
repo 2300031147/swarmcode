@@ -112,30 +112,25 @@ pub async fn chat_send_message(
 
     // Build the client and send
     let client = ProviderClient::from_model(&model).map_err(|e| e.to_string())?;
-    let response = client.send_message(&request).await.map_err(|e| e.to_string())?;
-
-    let assistant_text = response
-        .content
-        .iter()
-        .filter_map(|block| {
-            if let swarm_api::OutputContentBlock::Text { text } = block {
-                Some(text.clone())
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("");
-
-    let tokens_in = response.usage.input_tokens;
-    let tokens_out = response.usage.output_tokens;
+    
+    // ── Swarm Hardening: Content Block Processing ───────────────────────
+    // We recreate the assistant message using the block builder we hardened
+    let assistant_events = client.stream(&request).map_err(|e| e.to_string())?;
+    let (convo_msg, usage_info) = swarm_runtime::build_assistant_message(assistant_events)
+        .map_err(|e| e.to_string())?;
+    
+    // We serialize the blocks to JSON so the frontend can parse them
+    let assistant_content = convo_msg.to_json().render();
+    
+    let tokens_in = usage_info.map(|u| u.input_tokens).unwrap_or(0);
+    let tokens_out = usage_info.map(|u| u.output_tokens).unwrap_or(0);
 
     // Build the reply message
     let reply = ChatMessage {
-        id: response.id.clone(),
+        id: format!("asst-{now_ms}"),
         role: "assistant".to_string(),
-        content: assistant_text,
-        model: Some(response.model.clone()),
+        content: assistant_content,
+        model: Some(model.clone()),
         tokens_in: Some(tokens_in),
         tokens_out: Some(tokens_out),
         timestamp_ms: now_ms,

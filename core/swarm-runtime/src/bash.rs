@@ -199,12 +199,17 @@ fn prepare_command(
 
     let mut prepared = Command::new("sh");
     prepared.arg("-lc").arg(command).current_dir(cwd);
+    
+    // Scrub sensitive environment variables
+    crate::subprocess::scrub_env(&mut prepared);
+
     if sandbox_status.filesystem_active {
         prepared.env("HOME", cwd.join(".sandbox-home"));
         prepared.env("TMPDIR", cwd.join(".sandbox-tmp"));
     }
     prepared
 }
+
 
 fn prepare_tokio_command(
     command: &str,
@@ -226,6 +231,12 @@ fn prepare_tokio_command(
 
     let mut prepared = TokioCommand::new("sh");
     prepared.arg("-lc").arg(command).current_dir(cwd);
+
+    // Scrub sensitive environment variables
+    for key in SENSITIVE_ENV_VARS {
+        prepared.env_remove(key);
+    }
+
     if sandbox_status.filesystem_active {
         prepared.env("HOME", cwd.join(".sandbox-home"));
         prepared.env("TMPDIR", cwd.join(".sandbox-tmp"));

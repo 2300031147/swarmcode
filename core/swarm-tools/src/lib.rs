@@ -842,16 +842,18 @@ fn run_bash(input: BashCommandInput) -> Result<String, String> {
         .map_err(|error| error.to_string())
 }
 
-#[allow(clippy::needless_pass_by_value)]
 fn run_read_file(input: ReadFileInput) -> Result<String, String> {
-    to_pretty_json(read_file(&input.path, input.offset, input.limit).map_err(io_to_string)?)
+    let path = validate_path(&input.path)?;
+    to_pretty_json(read_file(&path.display().to_string(), input.offset, input.limit).map_err(io_to_string)?)
 }
 
 #[allow(clippy::needless_pass_by_value)]
 fn run_write_file(input: WriteFileInput) -> Result<String, String> {
-    let op = || to_pretty_json(write_file(&input.path, &input.content).map_err(io_to_string)?);
+    let path = validate_path(&input.path)?;
+    let path_str = path.display().to_string();
+    let op = || to_pretty_json(write_file(&path_str, &input.content).map_err(io_to_string)?);
     if let Some(hub) = global_team_hub() {
-        hub.with_file_lock(&input.path, op)?
+        hub.with_file_lock(&path_str, op)?
     } else {
         op()
     }
@@ -859,10 +861,12 @@ fn run_write_file(input: WriteFileInput) -> Result<String, String> {
 
 #[allow(clippy::needless_pass_by_value)]
 fn run_edit_file(input: EditFileInput) -> Result<String, String> {
+    let path = validate_path(&input.path)?;
+    let path_str = path.display().to_string();
     let op = || {
         to_pretty_json(
             edit_file(
-                &input.path,
+                &path_str,
                 &input.old_string,
                 &input.new_string,
                 input.replace_all.unwrap_or(false),
@@ -871,7 +875,7 @@ fn run_edit_file(input: EditFileInput) -> Result<String, String> {
         )
     };
     if let Some(hub) = global_team_hub() {
-        hub.with_file_lock(&input.path, op)?
+        hub.with_file_lock(&path_str, op)?
     } else {
         op()
     }
@@ -929,7 +933,11 @@ fn run_notebook_edit(input: NotebookEditInput) -> Result<String, String> {
 }
 
 fn run_sleep(input: SleepInput) -> Result<String, String> {
-    to_pretty_json(execute_sleep(input))
+    let mut capped_input = input;
+    if capped_input.duration_ms > 60_000 {
+        capped_input.duration_ms = 60_000;
+    }
+    to_pretty_json(execute_sleep(capped_input))
 }
 
 fn run_brief(input: BriefInput) -> Result<String, String> {
@@ -1148,6 +1156,19 @@ fn to_pretty_json<T: serde::Serialize>(value: T) -> Result<String, String> {
 #[allow(clippy::needless_pass_by_value)]
 fn io_to_string(error: std::io::Error) -> String {
     error.to_string()
+}
+
+fn validate_path(path_str: &str) -> Result<PathBuf, String> {
+    let path = PathBuf::from(path_str);
+    
+    // For production hardening, we prevent escaping the current workspace via '..'
+    for component in path.components() {
+        if matches!(component, std::path::Component::ParentDir) {
+            return Err(format!("Path traversal attempt detected: {path_str}"));
+        }
+    }
+
+    Ok(path)
 }
 
 #[derive(Debug, Deserialize)]

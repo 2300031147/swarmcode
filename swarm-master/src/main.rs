@@ -149,15 +149,15 @@ async fn run_agent_loop(hub: Arc<SwarmHive>, profile: AgentProfile) -> Result<()
         for msg in inbox {
             hub.set_status(&profile.id, HiveMemberStatus::Active);
 
-            // [INTEGRATION] Apply specialization logic based on profile
+            // [SIMULATION MODE] Placeholder logic for specialized agents
             let response = if profile.id == "security-auditor" {
-                format!("🛡️ [Security Audit]: Analyzing patterns for vulnerability risk... Logic check: '{}'. All patterns nominal.", msg.body)
+                format!("🛡️ [Simulation]: Security Auditor checked '{}'. No immediate vulnerabilities found in static trace.", msg.body)
             } else if profile.id == "performance-tuner" {
-                 format!("⚡ [Performance Tuner]: Analyzing AST complexity cycles... Complexity check: '{}'. Node counts within SLA.", msg.body)
+                 format!("⚡ [Simulation]: Performance Tuner analyzed '{}'. Complexity metrics are within standard deviations.", msg.body)
             } else if profile.id == "doc-lead" {
-                 format!("📝 [Doc Lead]: Verifying API documentation coverage... Doc check: '{}'. Coverage at 100%.", msg.body)
+                 format!("📝 [Simulation]: Doc Lead verified '{}'. Documentation coverage remains compliant.", msg.body)
             } else {
-                format!("Response from {}: {}", profile.name, msg.body)
+                format!("[Simulation] Response from {}: {}", profile.name, msg.body)
             };
 
             // Broadcast specialized findings back to the Hub

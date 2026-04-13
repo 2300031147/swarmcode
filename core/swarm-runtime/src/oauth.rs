@@ -318,8 +318,9 @@ pub fn parse_oauth_callback_query(query: &str) -> Result<OAuthCallbackParams, St
 }
 
 fn generate_random_token(bytes: usize) -> io::Result<String> {
+    use rand::RngCore;
     let mut buffer = vec![0_u8; bytes];
-    File::open("/dev/urandom")?.read_exact(&mut buffer)?;
+    rand::thread_rng().fill_bytes(&mut buffer);
     Ok(base64url_encode(&buffer))
 }
 
@@ -358,10 +359,25 @@ fn write_credentials_root(path: &PathBuf, root: &Map<String, Value>) -> io::Resu
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let rendered = serde_json::to_string_pretty(&Value::Object(root.clone()))
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-    let temp_path = path.with_extension("json.tmp");
-    fs::write(&temp_path, format!("{rendered}\n"))?;
+    let temp_path = path.with_extension(format!("json.tmp.{}", generate_random_token(8)));
+
+    {
+        use std::fs::OpenOptions;
+        #[cfg(unix)]
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+
+        #[cfg(unix)]
+        options.mode(0o600);
+
+        let mut f = options.open(&temp_path)?;
+        let rendered = serde_json::to_string_pretty(&Value::Object(root.clone()))
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        std::io::Write::write_all(&mut f, format!("{rendered}\n").as_bytes())?;
+    }
+
     fs::rename(temp_path, path)
 }
 

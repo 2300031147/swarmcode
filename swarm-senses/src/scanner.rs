@@ -54,8 +54,11 @@ impl CodebaseExtractor {
                         
                         if let Some((lang, lang_name)) = language_for_ext(ext) {
                             let mut parser = Parser::new();
-                            parser.set_language(&lang).expect("grammar load failure");
-                            self.parse_file(entry.path(), graph, &mut parser, lang_name);
+                            if let Err(e) = parser.set_language(&lang) {
+                                error!("ERROR: Grammar load failure for {}: {}", lang_name, e);
+                                continue;
+                            }
+                            self.parse_file(root_dir, entry.path(), graph, &mut parser, lang_name);
                             files_scanned += 1;
                         }
                     }
@@ -67,8 +70,9 @@ impl CodebaseExtractor {
         info!("[swarm-senses: Extractor] File trace exhaustive. Total source files indexed: {}", files_scanned);
     }
 
-    fn parse_file(&self, path: &Path, graph: &mut CodeGraph, parser: &mut Parser, lang: &str) {
-        let module_symbol = format!("module::{}", path.file_stem().unwrap_or_default().to_string_lossy());
+    fn parse_file(&self, root_dir: &Path, path: &Path, graph: &mut CodeGraph, parser: &mut Parser, lang: &str) {
+        let relative_path = path.strip_prefix(root_dir).unwrap_or(path);
+        let module_symbol = format!("module::{}", relative_path.display()).replace('\\', "/");
         
         // Push the Root Module Node
         let _node_idx = graph.add_node(module_symbol.clone(), CodeNode {
@@ -103,6 +107,7 @@ impl CodebaseExtractor {
                         // Go
                         ("go", "function_declaration") => (CodeNodeType::Function, "name"),
                         ("go", "type_declaration")     => (CodeNodeType::Struct,   "name"),
+                        ("go", "method_declaration")   => (CodeNodeType::Function, "name"),
                         // Java
                         ("java", "method_declaration") => (CodeNodeType::Function, "name"),
                         ("java", "class_declaration")  => (CodeNodeType::Class,    "name"),
@@ -115,6 +120,8 @@ impl CodebaseExtractor {
 
                     if let Some(name_node) = child.child_by_field_name(name_field) {
                         if let Ok(symbol_name) = std::str::from_utf8(&source_code[name_node.start_byte()..name_node.end_byte()]) {
+                            // Trim whitespace and special characters potential in field name nodes
+                            let symbol_name = symbol_name.trim();
                             let symbol_fqn = format!("{}::{}", module_symbol, symbol_name);
                             
                             graph.add_node(symbol_fqn.clone(), CodeNode {

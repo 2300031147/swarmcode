@@ -146,19 +146,26 @@ fn push_unicode_escape(rendered: &mut String, control: char) {
 struct Parser<'a> {
     chars: Vec<char>,
     index: usize,
+    depth: usize,
     _source: &'a str,
 }
+
+const MAX_JSON_DEPTH: usize = 128;
 
 impl<'a> Parser<'a> {
     fn new(source: &'a str) -> Self {
         Self {
             chars: source.chars().collect(),
             index: 0,
+            depth: 0,
             _source: source,
         }
     }
 
     fn parse_value(&mut self) -> Result<JsonValue, JsonError> {
+        if self.depth > MAX_JSON_DEPTH {
+            return Err(JsonError::new("JSON depth limit exceeded"));
+        }
         self.skip_whitespace();
         match self.peek() {
             Some('n') => self.parse_literal("null", JsonValue::Null),
@@ -228,6 +235,7 @@ impl<'a> Parser<'a> {
 
     fn parse_array(&mut self) -> Result<JsonValue, JsonError> {
         self.expect('[')?;
+        self.depth += 1;
         let mut values = Vec::new();
         loop {
             self.skip_whitespace();
@@ -241,11 +249,13 @@ impl<'a> Parser<'a> {
             }
             self.expect(',')?;
         }
+        self.depth -= 1;
         Ok(JsonValue::Array(values))
     }
 
     fn parse_object(&mut self) -> Result<JsonValue, JsonError> {
         self.expect('{')?;
+        self.depth += 1;
         let mut entries = BTreeMap::new();
         loop {
             self.skip_whitespace();
@@ -263,6 +273,7 @@ impl<'a> Parser<'a> {
             }
             self.expect(',')?;
         }
+        self.depth -= 1;
         Ok(JsonValue::Object(entries))
     }
 

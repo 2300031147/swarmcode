@@ -520,7 +520,7 @@ impl SwarmHive {
         let lock_name = format!("{:x}.lock", hasher.finalize());
         let lock_path = team_dir.join("locks").join(lock_name);
 
-        // Simple spin-lock with retries
+        // Simple spin-lock with retries and stale lock detection
         let mut attempts = 0;
         loop {
             match fs::create_dir(&lock_path) {
@@ -531,6 +531,19 @@ impl SwarmHive {
                     return Ok(result);
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    // Check for stale lock
+                    if let Ok(metadata) = fs::metadata(&lock_path) {
+                        if let Ok(created) = metadata.created() {
+                            if let Ok(elapsed) = created.elapsed() {
+                                if elapsed.as_secs() > 300 {
+                                    // Lock is older than 5 minutes, likely stale
+                                    let _ = fs::remove_dir(&lock_path);
+                                    continue; // Try again immediately
+                                }
+                            }
+                        }
+                    }
+
                     attempts += 1;
                     if attempts > 300 {
                         return Err(format!(

@@ -338,11 +338,14 @@ The AI will dynamically ping the MCP server on boot, learn the tool schemas prov
 
 ## 🛡️ Security & Zero-Trust Paradigm
 
-AI execution is dangerous. SwarmCode was designed strictly with a **Zero-Trust** security module preventing arbitrary execution. 
+AI execution is dangerous. SwarmCode was designed strictly with a **Zero-Trust** security module preventing arbitrary execution and exfiltration.
 
-1. **Sandboxed Terminal**: Any command requested by the AI (e.g., `rm -rf node_modules`) is trapped in the `swarm-runtime` buffer. It triggers an IPC event to the React GUI. The GUI halts all AI inference and waits for explicit human action: `Allow` or `Deny`.
-2. **File Deletion Safeguards**: Mass deletion tools require distinct permissions. They cannot execute on multiple paths simultaneously without looping the permission grid.
-3. **API Key Isolation**: All LLM queries are processed in the internal Rust memory. API keys are never leaked to the React DOM or Webview environment, isolating them from XSS or generic browser attacks.
+1. **Path Traversal Protection**: All file system tools (read, write, edit, grep) are shielded by a robust path validation engine. The AI cannot "escape" the workspace using `..` sequences or access sensitive system paths (e.g., `/etc/passwd`, `C:\Windows`).
+2. **Environment Scrubbing**: Sensitive environment variables, including `OPENAI_API_KEY`, `GITHUB_TOKEN`, and `DATABASE_URL`, are automatically scrubbed before spawning child processes. This prevents Hook processes, MCP servers, or Shell scripts from stealing your credentials.
+3. **Sandboxed Terminal**: Any command requested by the AI (e.g., `rm -rf node_modules`) is trapped in the `swarm-runtime` buffer. It triggers an IPC event to the React GUI. The GUI halts all AI inference and waits for explicit human action: `Allow` or `Deny`.
+4. **JSON Payload Safety**: To prevent stack exhaustion attacks, the internal JSON parser enforces a maximum recursion depth (128). This mitigates adversarial "billion laughs" style JSON payloads designed to crash the agent.
+5. **Hardened OAuth Storage**: OAuth credentials are saved with restricted filesystem permissions (`0600`). Randomness is handled via a cross-platform Cryptographically Secure Pseudo-Random Number Generator (CSPRNG), ensuring secure token exchange even on Windows.
+6. **API Key Isolation**: All LLM queries are processed in the internal Rust memory. API keys are never leaked to the React DOM or Webview environment, isolating them from XSS or generic browser attacks.
 
 ---
 

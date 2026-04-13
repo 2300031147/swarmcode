@@ -34,6 +34,9 @@ pub enum ContentBlock {
         output: String,
         is_error: bool,
     },
+    Thought {
+        text: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -270,6 +273,10 @@ impl ContentBlock {
                 object.insert("name".to_string(), JsonValue::String(name.clone()));
                 object.insert("input".to_string(), JsonValue::String(input.clone()));
             }
+            Self::Thought { text } => {
+                object.insert("type".to_string(), JsonValue::String("thought".to_string()));
+                object.insert("text".to_string(), JsonValue::String(text.clone()));
+            }
             Self::ToolResult {
                 tool_use_id,
                 tool_name,
@@ -305,6 +312,9 @@ impl ContentBlock {
             .ok_or_else(|| SessionError::Format("missing block type".to_string()))?
         {
             "text" => Ok(Self::Text {
+                text: required_string(object, "text")?,
+            }),
+            "thought" => Ok(Self::Thought {
                 text: required_string(object, "text")?,
             }),
             "tool_use" => Ok(Self::ToolUse {
