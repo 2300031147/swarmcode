@@ -18,7 +18,7 @@ use swarm_runtime::{
     RuntimeError, Session, SwarmHive, HiveMember, HiveMemberStatus, HiveRole, TokenUsage, ToolError,
     ToolExecutor, team_message, UsageTracker,
 };
-use swarm-senses::CodeGraph;
+use swarm_senses::CodeGraph;
 use swarm_hands::WebAgent;
 use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
@@ -960,15 +960,14 @@ thread_local! {
     static CURRENT_AGENT_ID: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
 }
 
-/// Initialise (or replace) the global team hub used by the HiveMessage
-/// and TeamStatus tools.  The CLI calls this once during startup when
-/// the `experimental_agent_teams` flag is enabled.
+/// Register the global team hub used by tools.
+pub fn register_global_team_hub(hub: Arc<SwarmHive>) {
+    let _ = GLOBAL_TEAM_HUB.set(hub);
+}
+
+/// Initialise the global team hub if not already set.
 pub fn init_global_team_hub() -> Arc<SwarmHive> {
-    let hub = Arc::new(SwarmHive::new());
-    // OnceLock::set will silently ignore if already set — that's fine.
-    let _ = GLOBAL_TEAM_HUB.set(Arc::clone(&hub));
-    // Always return the canonical instance.
-    Arc::clone(GLOBAL_TEAM_HUB.get().expect("just initialised"))
+    GLOBAL_TEAM_HUB.get_or_init(|| Arc::new(SwarmHive::new())).clone()
 }
 
 /// Retrieve the global team hub, if it has been initialised.
@@ -1000,12 +999,11 @@ pub fn global_web_agent() -> Option<Arc<Mutex<WebAgent>>> {
     GLOBAL_WEB_AGENT.get().map(Arc::clone)
 }
 
-/// Initialise the global team hub with a specific team ID.
-/// This is used by teammates to join an existing team.
+/// Initialise the global team hub with a specific team ID if not already set.
 pub fn init_global_team_hub_with_id(team_id: &str) -> Arc<SwarmHive> {
-    let hub = Arc::new(SwarmHive::new().with_persistence(team_id.to_string()));
-    let _ = GLOBAL_TEAM_HUB.set(Arc::clone(&hub));
-    Arc::clone(GLOBAL_TEAM_HUB.get().expect("just initialised"))
+    GLOBAL_TEAM_HUB.get_or_init(|| {
+        Arc::new(SwarmHive::new().with_persistence(team_id.to_string()))
+    }).clone()
 }
 
 /// Set the current agent ID for the current thread.

@@ -3,7 +3,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use rataswarm_matrix::{
+use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
@@ -11,7 +11,7 @@ use rataswarm_matrix::{
     Terminal,
 };
 use std::{error::Error, io, sync::Arc};
-use swarm_runtime::hub::{SwarmHive, team_message};
+use swarm_runtime::{SwarmHive, team_message};
 use swarm_runtime::usage::format_usd;
 use swarm_commands::SlashCommand;
 
@@ -89,7 +89,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut AppState) -> io::Re
     }
 }
 
-fn ui(f: &mut rataswarm_matrix::Frame, app: &AppState) {
+fn ui(f: &mut ratatui::Frame, app: &AppState) {
     let size = f.size();
 
     let chunks = Layout::default()
@@ -162,16 +162,16 @@ fn ui(f: &mut rataswarm_matrix::Frame, app: &AppState) {
             style = style.fg(Color::Yellow).add_modifier(Modifier::BOLD);
         }
 
-        history_spans.push(rataswarm_matrix::text::Line::from(vec![
-            rataswarm_matrix::text::Span::styled(format!("{}: ", message.from.to_uppercase()), Style::default().fg(name_color).add_modifier(Modifier::BOLD)),
-            rataswarm_matrix::text::Span::styled(message.body.clone(), style),
+        history_spans.push(ratatui::text::Line::from(vec![
+            ratatui::text::Span::styled(format!("{}: ", message.from.to_uppercase()), Style::default().fg(name_color).add_modifier(Modifier::BOLD)),
+            ratatui::text::Span::styled(message.body.clone(), style),
         ]));
-        history_spans.push(rataswarm_matrix::text::Line::from("")); // Spacer
+        history_spans.push(ratatui::text::Line::from("")); // Spacer
     }
 
     let messages_view = Paragraph::new(history_spans)
         .block(Block::default().title(" Distributed Team Hub Interaction ").borders(Borders::ALL))
-        .wrap(rataswarm_matrix::widgets::Wrap { trim: true });
+        .wrap(ratatui::widgets::Wrap { trim: true });
     f.render_widget(messages_view, chunks[1]);
 
     let input_view = Paragraph::new(app.input_text.as_ref())

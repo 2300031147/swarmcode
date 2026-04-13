@@ -3,6 +3,7 @@ use petgraph::Directed;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tree_sitter::{Language, Parser, Tree};
+use tracing::info;
 
 /// A metadata structure representing parsed AST information for a file.
 #[derive(Debug, Clone)]
@@ -62,20 +63,20 @@ impl CodeGraph {
     }
 }
 
-pub mod extractor;
+pub mod scanner;
 
 /// Core function to bootstrap the knowledge graph indexing process.
 /// In production, this binds to tree-sitter grammars for specific languages (e.g., Rust, Python).
 pub fn initialize_swarm_senses() -> CodeGraph {
-    println!("swarm-senses engine configured. Initializing blazing-fast AST Extraction...");
+    info!("swarm-senses engine configured. Initializing blazing-fast AST Extraction...");
     let mut cg = CodeGraph::new();
 
     // Dynamically crawl the local workspace upon boot to extract ASTs, completely replacing Python!
-    let ext = extractor::CodebaseExtractor::new();
+    let ext = scanner::CodebaseExtractor::new();
     ext.extract_workspace(std::env::current_dir().unwrap_or_default().as_path(), &mut cg);
 
     // Map internal framework boundaries explicitly
-    cg.add_dependency("ClawSwarm::swarm_matrix", "ClawSwarm::core", "imports");
+    cg.add_dependency("SwarmMatrix", "SwarmCore", "imports");
 
     cg
 }

@@ -10,6 +10,9 @@ swarm-hands = { path = "../swarm-hands" }
 swarm-api = { path = "../core/swarm-api" }
 swarm-runtime = { path = "../core/swarm-runtime" }
 swarm-commands = { path = "../core/swarm-commands" }
+swarm-tools = { path = "../core/swarm-tools" }
+core_server = { package = "swarm-server", path = "../core/swarm-server" }
+serde_json = "1.0"
 
 tokio = { version = "1.36", features = ["full"] }
 tracing = "0.1"

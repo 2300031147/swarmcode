@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 interface SymbolResult {
-  name: String;
-  file: String;
-  kind: String;
+  name: string;
+  file: string;
+  kind: string;
 }
 
 export default function SensesPanel() {

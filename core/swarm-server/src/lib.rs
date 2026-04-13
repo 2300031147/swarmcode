@@ -11,7 +11,7 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use swarm_runtime::{ConversationMessage, Session as RuntimeSession};
+use swarm_runtime::{ConversationMessage, Session as RuntimeSession, SwarmHive, HiveMessage};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, RwLock};
 
@@ -24,12 +24,18 @@ const BROADCAST_CAPACITY: usize = 64;
 pub struct AppState {
     sessions: SessionStore,
     next_session_id: Arc<AtomicU64>,
-    pub team_hub: Arc<swarm_runtime::hub::SwarmHive>,
+    pub team_hub: Arc<SwarmHive>,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new(Arc::new(SwarmHive::new()))
+    }
 }
 
 impl AppState {
     #[must_use]
-    pub fn new(team_hub: Arc<swarm_runtime::hub::SwarmHive>) -> Self {
+    pub fn new(team_hub: Arc<SwarmHive>) -> Self {
         let (events, _) = broadcast::channel(BROADCAST_CAPACITY);
         
         // [INTEGRATION] Bridge SwarmHive messages to all active sessions via broadcast
@@ -63,7 +69,7 @@ enum SessionEvent {
         message: ConversationMessage,
     },
     HiveMessage {
-        message: swarm_runtime::hub::HiveMessage,
+        message: HiveMessage,
     },
 }
 

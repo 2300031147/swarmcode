@@ -56,10 +56,12 @@ pub struct ExtractedManifest {
 
 fn resolve_upstream_repo_root(primary_repo_root: &Path) -> PathBuf {
     let candidates = upstream_repo_candidates(primary_repo_root);
-    candidates
-        .into_iter()
-        .find(|candidate| candidate.join("src/commands.ts").is_file())
-        .unwrap_or_else(|| primary_repo_root.to_path_buf())
+    for candidate in candidates {
+        if candidate.join("src/commands.ts").is_file() {
+            return candidate;
+        }
+    }
+    primary_repo_root.to_path_buf()
 }
 
 fn upstream_repo_candidates(primary_repo_root: &Path) -> Vec<PathBuf> {
@@ -222,11 +224,10 @@ fn imported_symbols(line: &str) -> Vec<String> {
         return Vec::new();
     };
 
-    let before_from = after_import
-        .split(" from ")
-        .next()
-        .unwrap_or_default()
-        .trim();
+    let before_from = match after_import.split(" from ").next() {
+        Some(s) => s.trim(),
+        None => return Vec::new(),
+    };
     if before_from.starts_with('{') {
         return before_from
             .trim_matches(|c| c == '{' || c == '}')

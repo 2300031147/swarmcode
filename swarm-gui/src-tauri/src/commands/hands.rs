@@ -17,12 +17,9 @@ pub struct HandsTaskRequest {
 pub async fn hands_run_agent(req: HandsTaskRequest) -> Result<String, String> {
     println!("🤖 SwarmHands: Starting agent task on: {}", req.url);
     
-    // In a real implementation, we would use req.show_browser 
-    // to configure the chromiumoxide BrowserConfig.
-    // For now, we execute the standard task loop.
-    
+    // We now properly pipe the frontend toggle down to Chromiumoxide
     let mut agent = WebAgent::new();
-    agent.execute_task(&req.url, &req.task).await
+    agent.execute_task(&req.url, &req.task, req.show_browser).await
         .map_err(|e| format!("Browser Agent Error: {}", e))?;
     
     Ok(format!("Task complete. URL: {}. Result captured in DOM snapshot.", agent.current_url))

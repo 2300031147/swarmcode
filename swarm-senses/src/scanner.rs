@@ -3,6 +3,7 @@ use std::fs;
 use ignore::WalkBuilder;
 use tree_sitter::Parser;
 use crate::{CodeGraph, CodeNode, CodeNodeType};
+use tracing::{info, error};
 
 pub struct CodebaseExtractor;
 
@@ -19,7 +20,7 @@ impl CodebaseExtractor {
 
     /// Recursively walks the directory and extracts AST nodes into the CodeGraph
     pub fn extract_workspace(&self, root_dir: &Path, graph: &mut CodeGraph) {
-        println!("[swarm-senses: Extractor] Initiating high-speed parallel file crawl targeting {:?}", root_dir);
+        info!("[swarm-senses: Extractor] Initiating high-speed parallel file crawl targeting {:?}", root_dir);
 
         let walker = WalkBuilder::new(root_dir)
             .hidden(true)
@@ -29,7 +30,7 @@ impl CodebaseExtractor {
         let mut files_scanned = 0;
         let mut tree_parser = Parser::new();
         // Initialize the native C TreeSitter language grammar!
-        tree_parser.set_language(&tree_sitter_rust::LANGUAGE.into()).expect("Error loading Rust grammar");
+        tree_parser.set_language(&tree_sitter_rust::language()).expect("Error loading Rust grammar");
 
         for result in walker {
             match result {
@@ -43,11 +44,11 @@ impl CodebaseExtractor {
                         }
                     }
                 }
-                Err(err) => println!("ERROR: Failed to walk file: {}", err),
+                Err(err) => error!("ERROR: Failed to walk file: {}", err),
             }
         }
         
-        println!("[swarm-senses: Extractor] File trace exhaustive. Total Rust source files indexed: {}", files_scanned);
+        info!("[swarm-senses: Extractor] File trace exhaustive. Total Rust source files indexed: {}", files_scanned);
     }
 
     fn parse_file(&self, path: &Path, graph: &mut CodeGraph, parser: &mut Parser) {

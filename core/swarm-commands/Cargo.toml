@@ -10,4 +10,5 @@ workspace = true
 swarm-api = { path = "../swarm-api" }
 swarm-plugins = { path = "../swarm-plugins" }
 swarm-runtime = { path = "../swarm-runtime" }
+swarm-tools = { path = "../swarm-tools" }
 serde_json.workspace = true

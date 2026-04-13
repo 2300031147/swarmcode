@@ -28,17 +28,31 @@ impl WebAgent {
         }
     }
 
+    pub fn is_active(&self) -> bool {
+        // [INTEGRATION] In the portable Rust port, the agent is considered active 
+        // once the daemon has been initialized and the struct is ready for tasks.
+        true
+    }
+
     /// Translates the Hands TS logic into an async Rust function to spawn the browser
-    pub async fn execute_task(&mut self, url: &str, task: &str) -> Result<(), Box<dyn Error>> {
-        println!("🚀 Spawning headless Chromiumoxide daemon for: {}", url);
+    pub async fn execute_task(&mut self, url: &str, task: &str, show_browser: bool) -> Result<(), Box<dyn Error>> {
+        println!("🚀 Spawning Chromiumoxide daemon for: {}", url);
         
-        let (mut browser, mut handler) = Browser::launch(
-            BrowserConfig::builder()
-                .window_size(1920, 1080)
-                .with_head() // Run headless in production!
-                .build()?,
-        )
-        .await?;
+        println!(">> Automatically downloading Chromium binary dependencies (if missing)...");
+        let fetcher = chromiumoxide::fetcher::BrowserFetcher::new(
+            chromiumoxide::fetcher::BrowserFetcherOptions::builder().build().unwrap()
+        );
+        let browser_info = fetcher.fetch().await.map_err(|e| format!("Browser fetch failed: {}", e))?;
+        
+        let mut builder = BrowserConfig::builder()
+            .window_size(1920, 1080)
+            .chrome_executable(browser_info.executable_path);
+            
+        if show_browser {
+            builder = builder.with_head(); // Visible window mode
+        }
+
+        let (mut browser, mut handler) = Browser::launch(builder.build()?).await?;
 
         // Handle the background CDP stream natively in Rust 
         let handle = tokio::task::spawn(async move {

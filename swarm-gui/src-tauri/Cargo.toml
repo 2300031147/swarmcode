@@ -29,7 +29,7 @@ swarm-plugins  = { path = "../../core/swarm-plugins" }
 swarm-senses   = { path = "../../swarm-senses" }
 swarm-hands    = { path = "../../swarm-hands" }
 swarm-matrix   = { path = "../../swarm-matrix" }
-swarm-master   = { path = "../../swarm-master" }
+
 
 # Async + serialization
 tokio    = { version = "1", features = ["full"] }

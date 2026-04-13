@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use swarm_runtime::hub::{SwarmHive, HiveMember, HiveRole, HiveMemberStatus, team_message};
+use swarm_runtime::{SwarmHive, HiveMember, HiveRole, HiveMemberStatus, team_message};
 
 // ── State ─────────────────────────────────────────────────────────────────
 
@@ -50,7 +50,7 @@ pub fn agents_list(state: State<AgentState>) -> Result<HiveStatus, String> {
         id: "gui-orchestrator".to_string(),
         name: "GUI Orchestrator".to_string(),
         description: "ClawSwarm desktop GUI agent".to_string(),
-        role: HiveRole::Leader,
+        role: HiveRole::Lead,
         status: HiveMemberStatus::Active,
         last_seen_epoch_ms: now_ms(),
     });

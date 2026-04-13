@@ -2,7 +2,7 @@ use std::error::Error;
 use std::sync::Arc;
 use tracing::{info, Level};
 
-use swarm_runtime::hub::{SwarmHive, HiveMember, HiveRole, HiveMemberStatus, team_message};
+use swarm_runtime::{SwarmHive, HiveMember, HiveRole, HiveMemberStatus, team_message};
 use swarm_matrix::AppState;
 use swarm_tools::{init_global_code_graph, init_global_web_agent};
 use tokio::time::{sleep, Duration};
@@ -34,10 +34,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // 1. Initialize Rust Core SwarmHive
     info!("Initializing SwarmHive distributed Agent architecture...");
     let hub = Arc::new(SwarmHive::new().with_persistence("unified-ClawSwarm".to_string()));
+    swarm_tools::register_global_team_hub(hub.clone());
 
     // 2. Initialize AST Knowledge Engine (Deep integration from swarm-senses-4)
     info!("Starting Tree-sitter knowledge graph engine. Mapping workspace...");
-    let code_graph = swarm-senses::initialize_swarm-senses();
+    let code_graph = swarm_senses::initialize_swarm_senses();
     info!("Mapped {} AST nodes natively.", code_graph.graph.node_count());
     let _ = init_global_code_graph(code_graph);
 
@@ -88,7 +89,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
         }
     } else {
-        info!("Passing execution context to Rataswarm_matrix Visual Matrix...");
+        info!("Passing execution context to Ratatui Visual Matrix...");
         let mut app = AppState::with_context(hub.clone());
         swarm_matrix::render_interactive_terminal(&mut app).await?;
     }
@@ -96,7 +97,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn validate_subsystems(graph: &swarm-senses::KnowledgeGraph, browser: &swarm_hands::WebAgent) -> Result<(), Box<dyn Error>> {
+fn validate_subsystems(graph: &swarm_senses::CodeGraph, browser: &swarm_hands::WebAgent) -> Result<(), Box<dyn Error>> {
     if graph.graph.node_count() == 0 {
         return Err("Integrity Error: Knowledge Graph initialized with zero nodes. Verify workspace path.".into());
     }

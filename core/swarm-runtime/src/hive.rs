@@ -123,6 +123,7 @@ impl SwarmHive {
                 team_id: None,
                 tasks: BTreeMap::new(),
                 last_synced_idx: 0,
+                listener: None,
             }),
         }
     }
@@ -479,96 +480,6 @@ impl SwarmHive {
                 }
             }
         }
-    }
-
-    /// Add a new task to the shared task list.
-    pub fn add_task(&self, task: TeamTask) {
-        let team_dir = {
-            let inner = self.inner.lock().expect("SwarmHive lock poisoned");
-            inner.team_dir.clone()
-        };
-        let Some(team_dir) = team_dir else { return };
-        let task_path = team_dir.join("tasks").join(format!("{}.json", task.id));
-
-        let _ = self.with_file_lock(&task_path, || {
-            let json = serde_json::to_string_pretty(&task).expect("Task serialization failed");
-            fs::write(&task_path, json).ok();
-            Ok(())
-        });
-    }
-
-    /// Claim a task from the shared task list.
-    pub fn claim_task(&self, agent_id: &str, task_id: &str) -> Result<(), String> {
-        let inner = self.inner.lock().expect("SwarmHive lock poisoned");
-        let Some(team_dir) = &inner.team_dir else { return Err("No persistence enabled".to_string()) };
-
-        let lock_path = team_dir.join("locks").join(format!("{}.lock", task_id));
-        let task_path = team_dir.join("tasks").join(format!("{}.json", task_id));
-
-        // Atomic lock creation
-        let mut lock_file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&lock_path)
-            .map_err(|_| format!("Task {task_id} is already claimed"))?;
-
-        writeln!(lock_file, "claimed by {agent_id}").ok();
-
-        // Update task state
-        if let Ok(content) = fs::read_to_string(&task_path) {
-            if let Ok(mut task) = serde_json::from_str::<TeamTask>(&content) {
-                task.status = TeamTaskStatus::Claimed;
-                task.assigned_to = Some(agent_id.to_string());
-                let json = serde_json::to_string_pretty(&task).unwrap();
-                let _ = fs::write(&task_path, json);
-            }
-        }
-
-        Ok(())
-    }
-
-    /// List all tasks in the team.
-    pub fn list_tasks(&self) -> Vec<TeamTask> {
-        let inner = self.inner.lock().expect("SwarmHive lock poisoned");
-        let Some(team_dir) = &inner.team_dir else { return Vec::new() };
-        let tasks_dir = team_dir.join("tasks");
-
-        let mut tasks = Vec::new();
-        if let Ok(entries) = fs::read_dir(tasks_dir) {
-            for entry in entries.flatten() {
-                if let Ok(content) = fs::read_to_string(entry.path()) {
-                    if let Ok(task) = serde_json::from_str::<TeamTask>(&content) {
-                        tasks.push(task);
-                    }
-                }
-            }
-        }
-        tasks.sort_by_key(|t| t.created_at_ms);
-        tasks
-    }
-
-    /// Mark a task as completed.
-    pub fn complete_task(&self, task_id: &str) -> Result<(), String> {
-        let team_dir = {
-            let inner = self.inner.lock().expect("SwarmHive lock poisoned");
-            inner.team_dir.clone()
-        };
-        let Some(team_dir) = team_dir else { return Err("No persistence enabled".to_string()) };
-
-        let task_path = team_dir.join("tasks").join(format!("{}.json", task_id));
-
-        self.with_file_lock(&task_path, || {
-            // Update task state
-            if let Ok(content) = fs::read_to_string(&task_path) {
-                if let Ok(mut task) = serde_json::from_str::<TeamTask>(&content) {
-                    task.status = TeamTaskStatus::Done;
-                    let json = serde_json::to_string_pretty(&task).unwrap();
-                    let _ = fs::write(&task_path, json);
-                    Ok(())
-                } else {
-                    Err(format!("Task {task_id} not found or invalid"))
-                }
-            } else {
     }
 
     /// List all current members and their statuses.

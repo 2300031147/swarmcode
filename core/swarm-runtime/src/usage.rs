@@ -184,7 +184,7 @@ impl UsageTracker {
         tracker
     }
 
-    pub fn record(&mut self, usage: TokenUsage, hub_sync: Option<(&crate::hub::SwarmHive, &str)>) {
+    pub fn record(&mut self, usage: TokenUsage, hub_sync: Option<(&crate::hive::SwarmHive, &str)>) {
         self.latest_turn = usage;
         self.cumulative.input_tokens += usage.input_tokens;
         self.cumulative.output_tokens += usage.output_tokens;

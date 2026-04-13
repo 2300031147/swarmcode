@@ -2066,7 +2066,7 @@ pub fn handle_version_command_logic() -> String {
     res.push_str("    - `core`: Bootstrapped (Brains)\n");
     res.push_str("    - `swarm-senses`: AST Map Active (Senses)\n");
     res.push_str("    - `Hands`: CDP Daemon Active (Hands)\n");
-    res.push_str("    - `swarm_matrix`: Rataswarm_matrix Matrix Active (Voice)\n");
+    res.push_str("    - `swarm-matrix`: Ratatui Matrix Active (Voice)\n");
     res.push_str("\n> [!TIP]\n> This build is optimized for autonomous engineering missions.");
     res
 }
@@ -2158,7 +2158,7 @@ pub fn handle_slash_command(
         | SlashCommand::Plan { .. } => None,
 
         SlashCommand::Agents { .. } => Some(SlashCommandResult {
-            message: handle_agents_command_logic(swarm_runtime::hub::global_team_hub().map(|h| h.members()).unwrap_or_default()),
+            message: handle_agents_command_logic(swarm_tools::global_team_hub().map(|h| h.members()).unwrap_or_default()),
             session: session.clone(),
         }),
         SlashCommand::Skills { .. } => Some(SlashCommandResult {
@@ -2229,7 +2229,7 @@ pub fn handle_slash_command(
     }
 }
 
-use swarm_runtime::hub::HiveMember;
+use swarm_runtime::HiveMember;
 
 #[cfg(test)]
 mod tests {
