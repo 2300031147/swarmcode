@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PermissionMode {
+    Prompt,
     ReadOnly,
     WorkspaceWrite,
     DangerFullAccess,
-    Prompt,
     Allow,
 }
 
@@ -13,10 +13,10 @@ impl PermissionMode {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Prompt => "prompt",
             Self::ReadOnly => "read-only",
             Self::WorkspaceWrite => "workspace-write",
             Self::DangerFullAccess => "danger-full-access",
-            Self::Prompt => "prompt",
             Self::Allow => "allow",
         }
     }
@@ -106,7 +106,7 @@ impl PermissionPolicy {
         };
 
         if current_mode == PermissionMode::Prompt
-            || (current_mode == PermissionMode::WorkspaceWrite
+            || (current_mode < PermissionMode::DangerFullAccess
                 && required_mode == PermissionMode::DangerFullAccess)
         {
             return match prompter.as_mut() {
@@ -228,5 +228,28 @@ mod tests {
             policy.authorize("bash", "echo hi", Some(&mut prompter)),
             PermissionOutcome::Deny { reason } if reason == "not now"
         ));
+    }
+
+    #[test]
+    fn prompts_for_any_escalation_in_prompt_mode() {
+        let policy = PermissionPolicy::new(PermissionMode::Prompt)
+            .with_tool_requirement("bash", PermissionMode::DangerFullAccess)
+            .with_tool_requirement("read_file", PermissionMode::ReadOnly);
+        let mut prompter = RecordingPrompter {
+            seen: Vec::new(),
+            allow: true,
+        };
+
+        // Should prompt for DangerFullAccess
+        let outcome1 = policy.authorize("bash", "rm -rf /", Some(&mut prompter));
+        assert_eq!(outcome1, PermissionOutcome::Allow);
+        assert_eq!(prompter.seen.len(), 1);
+        assert_eq!(prompter.seen[0].required_mode, PermissionMode::DangerFullAccess);
+
+        // Should ALSO prompt for ReadOnly (strict zero trust)
+        let outcome2 = policy.authorize("read_file", "{}", Some(&mut prompter));
+        assert_eq!(outcome2, PermissionOutcome::Allow);
+        assert_eq!(prompter.seen.len(), 2);
+        assert_eq!(prompter.seen[1].required_mode, PermissionMode::ReadOnly);
     }
 }

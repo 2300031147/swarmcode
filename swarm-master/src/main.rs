@@ -98,15 +98,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn validate_subsystems(graph: &swarm_senses::CodeGraph, browser: &swarm_hands::WebAgent) -> Result<(), Box<dyn Error>> {
+    // 1. Verify Knowledge Graph
     if graph.graph.node_count() == 0 {
         return Err("Integrity Error: Knowledge Graph initialized with zero nodes. Verify workspace path.".into());
     }
     
+    // 2. Verify Browser Daemon
     if !browser.is_active() {
          return Err("Integrity Error: Browser Daemon failed to establish CDP handshake.".into());
     }
 
-    info!("Integrity Audit: [swarm-senses: OK] [Hands: OK] [SwarmHive: OK]");
+    // 3. Verify Filesystem Write Access for Persistence
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    let claw_dir = home.join(".clawswarm");
+    if let Err(e) = std::fs::create_dir_all(&claw_dir) {
+        return Err(format!("Integrity Error: Cannot create/access ~/.clawswarm directory: {e}").into());
+    }
+
+    info!("Integrity Audit: [swarm-senses: OK] [Hands: OK] [SwarmHive: OK] [Filesystem: OK]");
     Ok(())
 }
 

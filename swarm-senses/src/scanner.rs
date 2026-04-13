@@ -17,8 +17,23 @@ impl CodebaseExtractor {
     pub fn new() -> Self {
         Self
     }
+}
 
-    /// Recursively walks the directory and extracts AST nodes into the CodeGraph
+fn language_for_ext(ext: &str) -> Option<(tree_sitter::Language, &'static str)> {
+    match ext {
+        "rs" => Some((tree_sitter_rust::language(), "rust")),
+        "py" => Some((tree_sitter_python::language(), "python")),
+        "ts" => Some((tree_sitter_typescript::language_typescript(), "typescript")),
+        "tsx" => Some((tree_sitter_typescript::language_tsx(), "typescript")),
+        "js" | "jsx" | "mjs" => Some((tree_sitter_javascript::language(), "javascript")),
+        "go" => Some((tree_sitter_go::language(), "go")),
+        "java" => Some((tree_sitter_java::language(), "java")),
+        "cpp" | "cc" | "cxx" | "hpp" => Some((tree_sitter_cpp::language(), "cpp")),
+        _ => None,
+    }
+}
+
+impl CodebaseExtractor {
     pub fn extract_workspace(&self, root_dir: &Path, graph: &mut CodeGraph) {
         info!("[swarm-senses: Extractor] Initiating high-speed parallel file crawl targeting {:?}", root_dir);
 
@@ -28,19 +43,20 @@ impl CodebaseExtractor {
             .build();
 
         let mut files_scanned = 0;
-        let mut tree_parser = Parser::new();
-        // Initialize the native C TreeSitter language grammar!
-        tree_parser.set_language(&tree_sitter_rust::language()).expect("Error loading Rust grammar");
 
         for result in walker {
             match result {
                 Ok(entry) => {
                     if entry.path().is_file() {
-                        if let Some(ext) = entry.path().extension() {
-                            if ext == "rs" {
-                                self.parse_file(entry.path(), graph, &mut tree_parser);
-                                files_scanned += 1;
-                            }
+                        let ext = entry.path().extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("");
+                        
+                        if let Some((lang, lang_name)) = language_for_ext(ext) {
+                            let mut parser = Parser::new();
+                            parser.set_language(&lang).expect("grammar load failure");
+                            self.parse_file(entry.path(), graph, &mut parser, lang_name);
+                            files_scanned += 1;
                         }
                     }
                 }
@@ -48,10 +64,10 @@ impl CodebaseExtractor {
             }
         }
         
-        info!("[swarm-senses: Extractor] File trace exhaustive. Total Rust source files indexed: {}", files_scanned);
+        info!("[swarm-senses: Extractor] File trace exhaustive. Total source files indexed: {}", files_scanned);
     }
 
-    fn parse_file(&self, path: &Path, graph: &mut CodeGraph, parser: &mut Parser) {
+    fn parse_file(&self, path: &Path, graph: &mut CodeGraph, parser: &mut Parser, lang: &str) {
         let module_symbol = format!("module::{}", path.file_stem().unwrap_or_default().to_string_lossy());
         
         // Push the Root Module Node
@@ -63,41 +79,51 @@ impl CodebaseExtractor {
 
         // 1. Read file natively into bytes
         if let Ok(source_code) = fs::read(path) {
-            // 2. Transcribe python `tree.parse()` into Rust tree_sitter invocation!
             if let Some(tree) = parser.parse(&source_code, None) {
                 let root_node = tree.root_node();
                 
-                // 3. Recursive walk looking for Functions, Structs, Impls, and Traits
                 let mut cursor = root_node.walk();
                 for child in root_node.children(&mut cursor) {
                     let kind = child.kind();
-                    if kind == "function_item" || kind == "struct_item" || kind == "impl_item" || kind == "trait_item" {
-                        // Extract symbol name
-                        let name_node_opt = if kind == "impl_item" {
-                            child.child_by_field_name("type")
-                        } else {
-                            child.child_by_field_name("name")
-                        };
+                    
+                    let (node_type, name_field) = match (lang, kind) {
+                        // Rust
+                        ("rust", "function_item") => (CodeNodeType::Function, "name"),
+                        ("rust", "struct_item")   => (CodeNodeType::Struct,   "name"),
+                        ("rust", "impl_item")     => (CodeNodeType::Class,    "type"),
+                        ("rust", "trait_item")    => (CodeNodeType::Class,    "name"),
+                        // Python
+                        ("python", "function_definition") => (CodeNodeType::Function, "name"),
+                        ("python", "class_definition")    => (CodeNodeType::Class,    "name"),
+                        // TypeScript / JavaScript
+                        ("typescript"|"javascript", "function_declaration") => (CodeNodeType::Function, "name"),
+                        ("typescript"|"javascript", "class_declaration")    => (CodeNodeType::Class,    "name"),
+                        ("typescript"|"javascript", "method_definition")     => (CodeNodeType::Function, "name"),
+                        ("typescript", "interface_declaration") => (CodeNodeType::Class, "name"),
+                        // Go
+                        ("go", "function_declaration") => (CodeNodeType::Function, "name"),
+                        ("go", "type_declaration")     => (CodeNodeType::Struct,   "name"),
+                        // Java
+                        ("java", "method_declaration") => (CodeNodeType::Function, "name"),
+                        ("java", "class_declaration")  => (CodeNodeType::Class,    "name"),
+                        // C++
+                        ("cpp", "function_definition") => (CodeNodeType::Function, "name"),
+                        ("cpp", "class_specifier")     => (CodeNodeType::Class,    "name"),
+                        ("cpp", "struct_specifier")    => (CodeNodeType::Struct,   "name"),
+                        _ => continue,
+                    };
 
-                        if let Some(name_node) = name_node_opt {
-                            if let Ok(symbol_name) = std::str::from_utf8(&source_code[name_node.start_byte()..name_node.end_byte()]) {
-                                let symbol_fqn = format!("{}::{}", module_symbol, symbol_name);
-                                
-                                let node_type = match kind {
-                                    "struct_item" => CodeNodeType::Struct,
-                                    "impl_item" => CodeNodeType::Class, // Treating impl as Class mapping
-                                    _ => CodeNodeType::Function,
-                                };
+                    if let Some(name_node) = child.child_by_field_name(name_field) {
+                        if let Ok(symbol_name) = std::str::from_utf8(&source_code[name_node.start_byte()..name_node.end_byte()]) {
+                            let symbol_fqn = format!("{}::{}", module_symbol, symbol_name);
+                            
+                            graph.add_node(symbol_fqn.clone(), CodeNode {
+                                file_path: path.to_path_buf(),
+                                symbol_name: symbol_fqn.clone(),
+                                node_type,
+                            });
 
-                                graph.add_node(symbol_fqn.clone(), CodeNode {
-                                    file_path: path.to_path_buf(),
-                                    symbol_name: symbol_fqn.clone(),
-                                    node_type,
-                                });
-
-                                // Construct edge in Petgraph
-                                graph.add_dependency(&module_symbol, &symbol_fqn, "contains");
-                            }
+                            graph.add_dependency(&module_symbol, &symbol_fqn, "contains");
                         }
                     }
                 }

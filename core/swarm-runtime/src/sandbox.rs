@@ -164,7 +164,7 @@ pub fn resolve_sandbox_status_for_request(request: &SandboxRequest, cwd: &Path) 
     let namespace_supported = cfg!(target_os = "linux") && command_exists("unshare");
     let network_supported = namespace_supported;
     let filesystem_active =
-        request.enabled && request.filesystem_mode != FilesystemIsolationMode::Off;
+        request.enabled && request.filesystem_mode != FilesystemIsolationMode::Off && namespace_supported;
     let mut fallback_reasons = Vec::new();
 
     if request.enabled && request.namespace_restrictions && !namespace_supported {
