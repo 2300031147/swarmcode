@@ -20,6 +20,7 @@ pub mod subprocess;
 pub mod usage;
 pub mod visuals;
 mod memory;
+pub mod session_continuity;
 
 pub use swarm_lsp::{
     FileDiagnostics, LspContextEnrichment, LspError, LspManager, LspServerConfig,
@@ -92,7 +93,8 @@ pub use session::{ContentBlock, ConversationMessage, MessageRole, Session, Sessi
 pub use usage::{
     format_usd, pricing_for_model, ModelPricing, TokenUsage, UsageCostEstimate, UsageTracker,
 };
-pub use memory::{MemoryStore, MemoryScope};
+pub use memory::{MemoryRecord, MemoryScope, MemoryStore};
+pub use session_continuity::{inject_past_context, save_session_summary};
 pub use hive::{
     SwarmHive, HiveMember, HiveMemberStatus, HiveMessage, HiveRole, team_message,
 };

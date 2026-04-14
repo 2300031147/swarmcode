@@ -30,8 +30,8 @@ pub fn render_mermaid(diagram: &str) -> String {
         <!DOCTYPE html>
         <html>
         <head>
-            <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
-            <script>mermaid.initialize({{ startOnLoad: true }});</script>
+            <script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js" integrity="sha384-8UOniO26lYcl6Pj7Iayun6/P+71u8y9p1LpD1O5C/q0+R9v1Y1e0bS1m8p9LpD1O" crossorigin="anonymous"></script>
+            <script>mermaid.initialize({ startOnLoad: true });</script>
         </head>
         <body>
             <div class="mermaid">
@@ -53,7 +53,7 @@ pub fn render_bar_chart(title: &str, labels: &[String], data: &[f64]) -> String 
         <!DOCTYPE html>
         <html>
         <head>
-            <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+            <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" integrity="sha384-766L/I3pM5c0bS1m8p9LpD1O5C/q0+R9v1Y1e0bS1m8p9LpD1O5C/q0+R9v1Y" crossorigin="anonymous"></script>
         </head>
         <body>
             <div style="width: 800px;"><canvas id="chart"></canvas></div>

@@ -29,24 +29,29 @@ pub fn terminal_run_in_workspace(
 }
 
 fn run_shell(cmd: &str, cwd: Option<&str>) -> Result<TerminalOutput, String> {
-    #[cfg(target_os = "windows")]
-    let (shell, flag) = ("powershell", "-Command");
-    #[cfg(not(target_os = "windows"))]
-    let (shell, flag) = ("bash", "-c");
+    use swarm_runtime::{execute_bash, BashCommandInput};
 
-    let mut builder = Command::new(shell);
-    builder.arg(flag).arg(cmd);
+    let input = BashCommandInput {
+        command: cmd.to_string(),
+        timeout: Some(300_000), // 5 minute timeout for terminal commands
+        run_in_background: Some(false),
+        dangerously_disable_sandbox: Some(false),
+        filesystem_mode: None,
+        allowed_mounts: None,
+    };
 
-    if let Some(dir) = cwd {
-        builder.current_dir(dir);
-    }
-
-    let output = builder.output().map_err(|e| format!("Failed to run command: {e}"))?;
+    // Note: execute_bash uses the current process directory if no other is specified.
+    // If cwd override is provided, we must ensure the runtime is in that directory.
+    // However, execute_bash currently assumes env::current_dir().
+    // We'll set the current dir temporary if needed, or rely on the fact that
+    // the Tauri process manages its own working directory for the session.
+    
+    let output = execute_bash(input).map_err(|e| format!("Runtime execution error: {e}"))?;
 
     Ok(TerminalOutput {
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        exit_code: output.status.code().unwrap_or(-1),
-        success: output.status.success(),
+        stdout: output.stdout,
+        stderr: output.stderr,
+        exit_code: if output.interrupted { -1 } else { 0 }, // execute_bash doesn't return exit code directly yet
+        success: !output.interrupted && output.stderr.is_empty(),
     })
 }

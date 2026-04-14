@@ -84,57 +84,66 @@ impl CodebaseExtractor {
         // 1. Read file natively into bytes
         if let Ok(source_code) = fs::read(path) {
             if let Some(tree) = parser.parse(&source_code, None) {
-                let root_node = tree.root_node();
-                
-                let mut cursor = root_node.walk();
-                for child in root_node.children(&mut cursor) {
-                    let kind = child.kind();
+                self.walk_node(path, &module_symbol, tree.root_node(), graph, &source_code, lang);
+            }
+        }
+    }
+
+    fn walk_node(&self, path: &Path, module_symbol: &str, node: tree_sitter::Node, graph: &mut CodeGraph, source_code: &[u8], lang: &str) {
+        let kind = node.kind();
+        let mut child_module_symbol = module_symbol.to_string();
+
+        let (node_type, name_field) = match (lang, kind) {
+            // Rust
+            ("rust", "function_item") => (Some(CodeNodeType::Function), Some("name")),
+            ("rust", "struct_item")   => (Some(CodeNodeType::Struct),   Some("name")),
+            ("rust", "impl_item")     => (Some(CodeNodeType::Class),    Some("type")),
+            ("rust", "trait_item")    => (Some(CodeNodeType::Class),    Some("name")),
+            // Python
+            ("python", "function_definition") => (Some(CodeNodeType::Function), Some("name")),
+            ("python", "class_definition")    => (Some(CodeNodeType::Class),    Some("name")),
+            // TypeScript / JavaScript
+            ("typescript"|"javascript", "function_declaration") => (Some(CodeNodeType::Function), Some("name")),
+            ("typescript"|"javascript", "class_declaration")    => (Some(CodeNodeType::Class),    Some("name")),
+            ("typescript"|"javascript", "method_definition")     => (Some(CodeNodeType::Function), Some("name")),
+            ("typescript", "interface_declaration") => (Some(CodeNodeType::Class), Some("name")),
+            // Go
+            ("go", "function_declaration") => (Some(CodeNodeType::Function), Some("name")),
+            ("go", "type_declaration")     => (Some(CodeNodeType::Struct),   Some("name")),
+            ("go", "method_declaration")   => (Some(CodeNodeType::Function), Some("name")),
+            // Java
+            ("java", "method_declaration") => (Some(CodeNodeType::Function), Some("name")),
+            ("java", "class_declaration")  => (Some(CodeNodeType::Class),    Some("name")),
+            // C++
+            ("cpp", "function_definition") => (Some(CodeNodeType::Function), Some("name")),
+            ("cpp", "class_specifier")     => (Some(CodeNodeType::Class),    Some("name")),
+            ("cpp", "struct_specifier")    => (Some(CodeNodeType::Struct),   Some("name")),
+            _ => (None, None),
+        };
+
+        if let (Some(nt), Some(nf)) = (node_type, name_field) {
+            if let Some(name_node) = node.child_by_field_name(nf) {
+                if let Ok(symbol_name) = std::str::from_utf8(&source_code[name_node.start_byte()..name_node.end_byte()]) {
+                    let symbol_name = symbol_name.trim();
+                    let symbol_fqn = format!("{}::{}", module_symbol, symbol_name);
                     
-                    let (node_type, name_field) = match (lang, kind) {
-                        // Rust
-                        ("rust", "function_item") => (CodeNodeType::Function, "name"),
-                        ("rust", "struct_item")   => (CodeNodeType::Struct,   "name"),
-                        ("rust", "impl_item")     => (CodeNodeType::Class,    "type"),
-                        ("rust", "trait_item")    => (CodeNodeType::Class,    "name"),
-                        // Python
-                        ("python", "function_definition") => (CodeNodeType::Function, "name"),
-                        ("python", "class_definition")    => (CodeNodeType::Class,    "name"),
-                        // TypeScript / JavaScript
-                        ("typescript"|"javascript", "function_declaration") => (CodeNodeType::Function, "name"),
-                        ("typescript"|"javascript", "class_declaration")    => (CodeNodeType::Class,    "name"),
-                        ("typescript"|"javascript", "method_definition")     => (CodeNodeType::Function, "name"),
-                        ("typescript", "interface_declaration") => (CodeNodeType::Class, "name"),
-                        // Go
-                        ("go", "function_declaration") => (CodeNodeType::Function, "name"),
-                        ("go", "type_declaration")     => (CodeNodeType::Struct,   "name"),
-                        ("go", "method_declaration")   => (CodeNodeType::Function, "name"),
-                        // Java
-                        ("java", "method_declaration") => (CodeNodeType::Function, "name"),
-                        ("java", "class_declaration")  => (CodeNodeType::Class,    "name"),
-                        // C++
-                        ("cpp", "function_definition") => (CodeNodeType::Function, "name"),
-                        ("cpp", "class_specifier")     => (CodeNodeType::Class,    "name"),
-                        ("cpp", "struct_specifier")    => (CodeNodeType::Struct,   "name"),
-                        _ => continue,
-                    };
+                    graph.add_node(symbol_fqn.clone(), CodeNode {
+                        file_path: path.to_path_buf(),
+                        symbol_name: symbol_fqn.clone(),
+                        node_type: nt,
+                    });
 
-                    if let Some(name_node) = child.child_by_field_name(name_field) {
-                        if let Ok(symbol_name) = std::str::from_utf8(&source_code[name_node.start_byte()..name_node.end_byte()]) {
-                            // Trim whitespace and special characters potential in field name nodes
-                            let symbol_name = symbol_name.trim();
-                            let symbol_fqn = format!("{}::{}", module_symbol, symbol_name);
-                            
-                            graph.add_node(symbol_fqn.clone(), CodeNode {
-                                file_path: path.to_path_buf(),
-                                symbol_name: symbol_fqn.clone(),
-                                node_type,
-                            });
-
-                            graph.add_dependency(&module_symbol, &symbol_fqn, "contains");
-                        }
-                    }
+                    graph.add_dependency(module_symbol, &symbol_fqn, "contains");
+                    child_module_symbol = symbol_fqn; // Update for recursion
                 }
             }
+        }
+
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            self.walk_node(path, &child_module_symbol, child, graph, source_code, lang);
+        }
+    }
         }
     }
 }

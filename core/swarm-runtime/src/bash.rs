@@ -76,13 +76,16 @@ pub fn execute_bash(input: BashCommandInput) -> io::Result<BashCommandOutput> {
             .stderr(Stdio::null())
             .spawn()?;
 
+        let pid = child.id().to_string();
+        crate::subprocess::register_background_task(pid.clone(), child);
+
         return Ok(BashCommandOutput {
             stdout: String::new(),
             stderr: String::new(),
             raw_output_path: None,
             interrupted: false,
             is_image: None,
-            background_task_id: Some(child.id().to_string()),
+            background_task_id: Some(pid),
             backgrounded_by_user: Some(false),
             assistant_auto_backgrounded: Some(false),
             dangerously_disable_sandbox: input.dangerously_disable_sandbox,
@@ -233,9 +236,7 @@ fn prepare_tokio_command(
     prepared.arg("-lc").arg(command).current_dir(cwd);
 
     // Scrub sensitive environment variables
-    for key in SENSITIVE_ENV_VARS {
-        prepared.env_remove(key);
-    }
+    crate::subprocess::scrub_env(&mut prepared);
 
     if sandbox_status.filesystem_active {
         prepared.env("HOME", cwd.join(".sandbox-home"));

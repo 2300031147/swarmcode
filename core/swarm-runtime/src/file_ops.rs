@@ -446,31 +446,57 @@ fn make_patch(original: &str, updated: &str) -> Vec<StructuredPatchHunk> {
 }
 
 fn normalize_path(path: &str) -> io::Result<PathBuf> {
+    let cwd = std::env::current_dir()?;
     let candidate = if Path::new(path).is_absolute() {
         PathBuf::from(path)
     } else {
-        std::env::current_dir()?.join(path)
+        cwd.join(path)
     };
-    candidate.canonicalize()
+    
+    let canonical = candidate.canonicalize()?;
+    
+    // Boundary check (Issue #8)
+    if !canonical.starts_with(&cwd) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("Access denied: path {:?} is outside workspace root {:?}", canonical, cwd)
+        ));
+    }
+    
+    Ok(canonical)
 }
 
 fn normalize_path_allow_missing(path: &str) -> io::Result<PathBuf> {
+    let cwd = std::env::current_dir()?;
     let candidate = if Path::new(path).is_absolute() {
         PathBuf::from(path)
     } else {
-        std::env::current_dir()?.join(path)
+        cwd.join(path)
     };
 
     if let Ok(canonical) = candidate.canonicalize() {
+        // Boundary check (Issue #8)
+        if !canonical.starts_with(&cwd) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("Access denied: path {:?} is outside workspace root {:?}", canonical, cwd)
+            ));
+        }
         return Ok(canonical);
     }
 
     if let Some(parent) = candidate.parent() {
-        let canonical_parent = parent
-            .canonicalize()
-            .unwrap_or_else(|_| parent.to_path_buf());
-        if let Some(name) = candidate.file_name() {
-            return Ok(canonical_parent.join(name));
+        if let Ok(canonical_parent) = parent.canonicalize() {
+            // Boundary check for parent
+            if !canonical_parent.starts_with(&cwd) {
+                 return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!("Access denied: path {:?} is outside workspace root {:?}", canonical_parent, cwd)
+                ));
+            }
+            if let Some(name) = candidate.file_name() {
+                return Ok(canonical_parent.join(name));
+            }
         }
     }
 

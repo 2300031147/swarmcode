@@ -100,11 +100,57 @@ pub const SENSITIVE_ENV_VARS: &[&str] = &[
     "AWS_SECRET_ACCESS_KEY",
     "STRIPE_API_KEY",
     "DATABASE_URL",
+    "GOOGLE_API_KEY",
+    "GEMINI_API_KEY",
+    "GROQ_API_KEY",
+    "MISTRAL_API_KEY",
+    "AZURE_OPENAI_API_KEY",
+    "GCP_SERVICE_ACCOUNT",
+    "NPM_TOKEN",
+    "PYPI_TOKEN",
+    "CARGO_REGISTRY_TOKEN",
 ];
 
+/// Scrub sensitive environment variables from a command.
 pub fn scrub_env<C: SubprocessCommand>(command: &mut C) {
     for key in SENSITIVE_ENV_VARS {
         command.env_remove(key);
+    }
+}
+
+// ── Background Task Management ───────────────────────────────────────────
+
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::process::Child;
+
+lazy_static::lazy_static! {
+    static ref BACKGROUND_TASKS: Mutex<HashMap<String, Child>> = Mutex::new(HashMap::new());
+}
+
+/// Register a background child process for tracking.
+pub fn register_background_task(id: String, child: Child) {
+    if let Ok(mut tasks) = BACKGROUND_TASKS.lock() {
+        tasks.insert(id, child);
+    }
+}
+
+/// Terminate a background task by ID.
+pub fn kill_background_task(id: &str) -> bool {
+    if let Ok(mut tasks) = BACKGROUND_TASKS.lock() {
+        if let Some(mut child) = tasks.remove(id) {
+            return child.kill().is_ok();
+        }
+    }
+    false
+}
+
+/// List currently tracked background task IDs.
+pub fn list_background_tasks() -> Vec<String> {
+    if let Ok(tasks) = BACKGROUND_TASKS.lock() {
+        tasks.keys().cloned().collect()
+    } else {
+        Vec::new()
     }
 }
 

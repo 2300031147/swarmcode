@@ -155,123 +155,99 @@ pub async fn chat_send_message(
         (st.total_input_tokens, st.total_output_tokens, st.history.len())
     };
 
-    // Cost estimate (rough: $0.50/M input, $1.50/M output for mid-tier)
-    let cost = (total_in as f64 / 1_000_000.0 * 0.50)
-        + (total_out as f64 / 1_000_000.0 * 1.50);
+    // Calculate cost using the centralized usage service (Issue #10)
+    use swarm_runtime::usage::{TokenUsage, pricing_for_model};
+    
+    let usage = TokenUsage {
+        input_tokens: total_in as u64,
+        output_tokens: total_out as u64,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+    };
+    
+    let pricing = pricing_for_model(&model).unwrap_or_else(swarm_runtime::usage::ModelPricing::default_standard_tier);
+    let cost_estimate = usage.estimate_cost_usd_with_pricing(pricing);
+    let total_cost = cost_estimate.total_cost_usd();
 
     Ok(ChatResponse {
         message: reply,
-        total_cost_usd: cost,
+        total_cost_usd: total_cost,
         total_input_tokens: total_in,
         total_output_tokens: total_out,
     })
 }
 
-/// Get the list of all available models across all providers.
-#[tauri::command]
-pub fn chat_get_models() -> Vec<ModelEntry> {
-    let mut models = Vec::new();
+// ... existing code ...
 
-    // Built-in ClawSwarm API models
-    for (id, display, provider) in [
-        ("swarm-model-opus",    "SwarmMaster Pro",  "ClawSwarm API"),
-        ("swarm-model-sonnet",  "SwarmMaster Std",  "ClawSwarm API"),
-        ("swarm-model-haiku",   "SwarmMaster Lite", "ClawSwarm API"),
-        ("swarm-model-frontier","SwarmEdge Frontier","ClawSwarm xAI"),
-        ("swarm-model-mini",    "SwarmEdge Mini",   "ClawSwarm xAI"),
-    ] {
-        models.push(ModelEntry {
-            id: id.to_string(),
-            display_name: display.to_string(),
-            provider: provider.to_string(),
-            is_local: false,
-        });
-    }
-
-    // Ollama local models
-    if swarm_api::ollama_likely_running() || std::env::var("CLAWSWARM_OLLAMA_URL").is_ok() {
-        for name in ["llama3.2", "llama3.1", "phi4", "mistral", "deepseek-r1", "gemma3", "qwen2.5-coder"] {
-            models.push(ModelEntry {
-                id: name.to_string(),
-                display_name: format!("{name} (Ollama)"),
-                provider: "Ollama".to_string(),
-                is_local: true,
-            });
-        }
-    }
-
-    // Groq
-    if std::env::var("GROQ_API_KEY").map(|k| !k.is_empty()).unwrap_or(false) {
-        for (id, display) in [
-            ("groq/llama-3.3-70b-versatile", "Llama 3.3 70B"),
-            ("groq/mixtral-8x7b-32768",       "Mixtral 8x7B"),
-            ("groq/gemma2-9b-it",             "Gemma2 9B"),
-        ] {
-            models.push(ModelEntry {
-                id: id.to_string(),
-                display_name: format!("{display} (Groq)"),
-                provider: "Groq".to_string(),
-                is_local: false,
-            });
-        }
-    }
-
-    // OpenAI
-    if std::env::var("OPENAI_API_KEY").map(|k| !k.is_empty()).unwrap_or(false) {
-        for (id, display) in [("gpt-4o", "GPT-4o"), ("gpt-4o-mini", "GPT-4o mini"), ("o1", "o1"), ("o3-mini", "o3-mini")] {
-            models.push(ModelEntry {
-                id: id.to_string(),
-                display_name: format!("{display} (OpenAI)"),
-                provider: "OpenAI".to_string(),
-                is_local: false,
-            });
-        }
-    }
-
-    // Custom providers
-    for cp in swarm_api::load_custom_providers() {
-        for model_name in cp.models {
-            models.push(ModelEntry {
-                id: model_name.clone(),
-                display_name: format!("{model_name} ({})", cp.name),
-                provider: cp.name.clone(),
-                is_local: true,
-            });
-        }
-    }
-
-    models
-}
-
-/// Clear the chat history for this session.
-#[tauri::command]
-pub fn chat_clear_history(state: State<ChatState>) -> Result<(), String> {
-    let mut st = state.0.lock().map_err(|e| e.to_string())?;
-    st.history.clear();
-    st.total_input_tokens = 0;
-    st.total_output_tokens = 0;
-    Ok(())
-}
-
-/// Compact history keeping only a summary (placeholder — full compaction
-/// uses swarm-runtime's compact_session in a production build).
+/// Compact history keeping only a summary (Issue #16).
+/// We delegate to swarm-runtime's compaction logic.
 #[tauri::command]
 pub fn chat_compact_history(state: State<ChatState>) -> Result<String, String> {
+    use swarm_runtime::compact_session;
+    use swarm_runtime::session::{Session, ConversationMessage, MessageRole, ContentBlock};
+    
     let mut st = state.0.lock().map_err(|e| e.to_string())?;
     let count = st.history.len();
-    // Keep only last 10 messages
-    if st.history.len() > 10 {
-        st.history = st.history.split_off(st.history.len() - 10);
+    
+    if count < 15 {
+        return Ok(format!("History only has {count} messages. Compaction deferred until 15+."));
     }
-    Ok(format!("Compacted {count} messages. Kept last 10 for context."))
+
+    // Convert ChatMessage to Session for compaction
+    let mut session = Session {
+        version: 1,
+        messages: st.history.iter().map(|m| ConversationMessage {
+            role: match m.role.as_str() {
+                "assistant" => MessageRole::Assistant,
+                "system" => MessageRole::System,
+                _ => MessageRole::User,
+            },
+            blocks: vec![ContentBlock::Text { text: m.content.clone() }],
+            usage: None, // Simplified for this stub
+        }).collect(),
+    };
+
+    // Run compaction synchronously for now (placeholder for background compression)
+    let result = compact_session(&mut session, None).map_err(|e| e.to_string())?;
+    
+    // Update local history with the result
+    st.history = session.messages.iter().enumerate().map(|(i, m)| ChatMessage {
+        id: format!("compacted-{i}"),
+        role: match m.role {
+            MessageRole::Assistant => "assistant".to_string(),
+            MessageRole::System => "system".to_string(),
+            MessageRole::User => "user".to_string(),
+        },
+        content: m.blocks.iter().find_map(|b| match b {
+            ContentBlock::Text { text } => Some(text.clone()),
+            _ => None,
+        }).unwrap_or_default(),
+        model: None,
+        tokens_in: None,
+        tokens_out: None,
+        timestamp_ms: 0, // Metadata lost in simple compaction
+    }).collect();
+
+    Ok(format!("Successfully compacted {} messages into {}. Summary: {}", count, st.history.len(), result.summary))
 }
 
-/// Return current session token usage and estimated cost.
+/// Return current session token usage and estimated cost (Issue #10).
 #[tauri::command]
 pub fn chat_get_cost(state: State<ChatState>) -> Result<CostReport, String> {
+    use swarm_runtime::usage::{TokenUsage, pricing_for_model};
+    
     let st = state.0.lock().map_err(|e| e.to_string())?;
-    let cost = (st.total_input_tokens as f64 / 1_000_000.0 * 0.50)
-        + (st.total_output_tokens as f64 / 1_000_000.0 * 1.50);
+    
+    let usage = TokenUsage {
+        input_tokens: st.total_input_tokens as u64,
+        output_tokens: st.total_output_tokens as u64,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+    };
+    
+    let pricing = pricing_for_model(&st.model).unwrap_or_else(swarm_runtime::usage::ModelPricing::default_standard_tier);
+    let cost = usage.estimate_cost_usd_with_pricing(pricing).total_cost_usd();
+
     Ok(CostReport {
         total_input_tokens: st.total_input_tokens,
         total_output_tokens: st.total_output_tokens,

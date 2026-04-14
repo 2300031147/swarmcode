@@ -92,6 +92,7 @@ pub struct SystemPromptBuilder {
     project_context: Option<ProjectContext>,
     config: Option<RuntimeConfig>,
     memories: Option<std::collections::HashMap<String, Vec<String>>>,
+    past_session_context: Option<String>,
 }
 
 impl SystemPromptBuilder {
@@ -147,6 +148,14 @@ impl SystemPromptBuilder {
         self
     }
 
+    /// Inject cross-session context produced by `session_continuity::inject_past_context`.
+    /// Call this at the start of every new session on a known project.
+    #[must_use]
+    pub fn with_past_session_context(mut self, context: String) -> Self {
+        self.past_session_context = Some(context);
+        self
+    }
+
     #[must_use]
     pub fn build(&self) -> Vec<String> {
         let mut sections = Vec::new();
@@ -171,6 +180,11 @@ impl SystemPromptBuilder {
         if let Some(memories) = &self.memories {
             if !memories.is_empty() {
                 sections.push(render_memories_section(memories));
+            }
+        }
+        if let Some(past_ctx) = &self.past_session_context {
+            if !past_ctx.is_empty() {
+                sections.push(past_ctx.clone());
             }
         }
         sections.extend(self.append_sections.iter().cloned());
@@ -513,11 +527,35 @@ pub fn load_system_prompt(
     let cwd = cwd.into();
     let project_context = ProjectContext::discover_with_git(&cwd, current_date.into())?;
     let config = ConfigLoader::default_for(&cwd).load()?;
-    Ok(SystemPromptBuilder::new()
+
+    // Inject memories from the persistent store (global + project scopes)
+    let memory_store = crate::memory::MemoryStore::new(&cwd);
+    let mut memories = std::collections::HashMap::new();
+    if let Ok(global_mems) = memory_store.retrieve_all(crate::memory::MemoryScope::Global) {
+        memories.extend(global_mems);
+    }
+    if let Ok(project_mems) = memory_store.retrieve_all(crate::memory::MemoryScope::Project) {
+        for (k, v) in project_mems {
+            memories.entry(k).or_default().extend(v);
+        }
+    }
+
+    // Inject past session summaries
+    let past_ctx = crate::session_continuity::inject_past_context(&cwd);
+
+    let mut builder = SystemPromptBuilder::new()
         .with_os(os_name, os_version)
         .with_project_context(project_context)
-        .with_runtime_config(config)
-        .build())
+        .with_runtime_config(config);
+
+    if !memories.is_empty() {
+        builder = builder.with_memories(memories);
+    }
+    if let Some(ctx) = past_ctx {
+        builder = builder.with_past_session_context(ctx);
+    }
+
+    Ok(builder.build())
 }
 
 fn render_config_section(config: &RuntimeConfig) -> String {

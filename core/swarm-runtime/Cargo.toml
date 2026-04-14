@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 sha2 = "0.10"
 glob = "0.3"
+home = "0.5"
 swarm-lsp = { path = "../swarm-lsp" }
 swarm-plugins = { path = "../swarm-plugins" }
 regex = "1"

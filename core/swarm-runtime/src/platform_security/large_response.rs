@@ -13,7 +13,17 @@ pub struct LargeResponseHandler {
 
 impl LargeResponseHandler {
     pub fn new() -> Self {
-        let temp_dir = std::env::temp_dir().join("swarm_tool_responses");
+        use rand::Rng;
+        let session_id: String = rand::rng()
+            .sample_iter(&rand::distr::Alphanumeric)
+            .take(12)
+            .map(char::from)
+            .collect();
+
+        let temp_dir = std::env::temp_dir()
+            .join("swarm_tool_responses")
+            .join(session_id);
+
         let _ = std::fs::create_dir_all(&temp_dir);
         let handler = Self { temp_dir };
         handler.purge_old_responses().ok();

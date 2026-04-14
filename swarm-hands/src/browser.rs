@@ -14,15 +14,17 @@ impl RefEngine {
         println!("[Hands: RefEngine] Injecting semantic interaction boundaries into the DOM natively...");
         
         let extraction_script = r#"
-            let id = 0;
-            document.querySelectorAll('button, a, input, textarea, select, [role="button"]').forEach(el => {
-                if (!el.hasAttribute('data-ClawSwarm-ref')) {
-                    el.setAttribute('data-ClawSwarm-ref', id.toString());
-                    el.style.border = '2px solid red'; // Visual cue for headless viewing
-                    id++;
-                }
-            });
-            id;
+            (() => {
+                let id = 0;
+                document.querySelectorAll('button, a, input, textarea, select, [role="button"]').forEach(el => {
+                    if (!el.hasAttribute('data-ClawSwarm-ref')) {
+                        el.setAttribute('data-ClawSwarm-ref', id.toString());
+                        el.style.border = '2px solid red'; // Visual cue for headless viewing
+                        id++;
+                    }
+                });
+                return id;
+            })();
         "#;
 
         let total_injected: i32 = page.evaluate(extraction_script)
@@ -38,7 +40,8 @@ impl RefEngine {
 
     /// Executes a click on an element tagged by `inject_dom_references` using the CDP `page.click()` equivalent
     pub async fn click_element_by_ref(&self, page: &Page, ref_id: &str) -> Result<(), Box<dyn Error>> {
-        let selector = format!("[data-ClawSwarm-ref='{}']", ref_id);
+        let sanitized_id = ref_id.replace(['\'', '\"', '(', ')', '[', ']', '>', '<', '*', '|', '\\', '{', '}', ';', ':'], "");
+        let selector = format!("[data-ClawSwarm-ref='{}']", sanitized_id);
         println!("[Hands: RefEngine] Emulating precise CDP click on selector: {}", selector);
         
         let element = page.find_element(selector.as_str()).await?;
@@ -49,7 +52,8 @@ impl RefEngine {
 
     /// Emulates keyboard typing into an element tagged by `inject_dom_references`
     pub async fn type_into_element_by_ref(&self, page: &Page, ref_id: &str, text: &str) -> Result<(), Box<dyn Error>> {
-        let selector = format!("[data-ClawSwarm-ref='{}']", ref_id);
+        let sanitized_id = ref_id.replace(['\'', '\"', '(', ')', '[', ']', '>', '<', '*', '|', '\\', '{', '}', ';', ':'], "");
+        let selector = format!("[data-ClawSwarm-ref='{}']", sanitized_id);
         println!("[Hands: RefEngine] Emulating typing into selector: {} -> \"{}\"", selector, text);
         
         let element = page.find_element(selector.as_str()).await?;
