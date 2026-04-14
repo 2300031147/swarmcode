@@ -320,7 +320,7 @@ pub fn parse_oauth_callback_query(query: &str) -> Result<OAuthCallbackParams, St
 fn generate_random_token(bytes: usize) -> io::Result<String> {
     use rand::RngCore;
     let mut buffer = vec![0_u8; bytes];
-    rand::thread_rng().fill_bytes(&mut buffer);
+    rand::rng().fill_bytes(&mut buffer);
     Ok(base64url_encode(&buffer))
 }
 
