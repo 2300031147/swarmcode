@@ -606,6 +606,42 @@ pub fn mvp_tool_specs() -> Vec<ToolSpec> {
             }),
             required_permission: PermissionMode::ReadOnly,
         },
+        ToolSpec {
+            name: "ListMcpResources",
+            description: "List all resources exposed by a specific MCP server.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "server_name": {
+                        "type": "string",
+                        "description": "The MCP server name as configured in mcpServers"
+                    }
+                },
+                "required": ["server_name"],
+                "additionalProperties": false
+            }),
+            required_permission: PermissionMode::ReadOnly,
+        },
+        ToolSpec {
+            name: "ReadMcpResource",
+            description: "Read a single resource by URI from a specific MCP server.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "server_name": {
+                        "type": "string",
+                        "description": "The MCP server name as configured in mcpServers"
+                    },
+                    "uri": {
+                        "type": "string",
+                        "description": "The resource URI to read"
+                    }
+                },
+                "required": ["server_name", "uri"],
+                "additionalProperties": false
+            }),
+            required_permission: PermissionMode::ReadOnly,
+        },
     ]
 }
 
@@ -675,31 +711,10 @@ struct ListMcpResourcesInput {
     server_name: String,
 }
 
-fn run_list_mcp_resources(input: ListMcpResourcesInput) -> Result<String, String> {
-    let manager_arc = global_mcp_manager()
-        .ok_or_else(|| "MCP manager is not initialized.".to_string())?;
-    let mut manager = manager_arc.lock().map_err(|e| e.to_string())?;
-
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    rt.block_on(async {
-        manager.discover_tools().await.map_err(|e| e.to_string())?;
-        // For simplicity, we just return a message saying resources are listed.
-        // Real implementation would call resources/list.
-        Ok(format!("Listed resources for MCP server '{}'.", input.server_name))
-    })
-}
-
 #[derive(Debug, Deserialize, Clone)]
 struct ReadMcpResourceInput {
+    server_name: String,
     uri: String,
-}
-
-fn run_read_mcp_resource(input: ReadMcpResourceInput) -> Result<String, String> {
-    Ok(format!("Content of MCP resource '{}':\n[Resource content would appear here in production with live MCP transport]", input.uri))
 }
 
 fn run_dynamic_mcp_tool(name: &str, input: &Value) -> Result<String, String> {
@@ -713,25 +728,137 @@ fn run_dynamic_mcp_tool(name: &str, input: &Value) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
 
     rt.block_on(async {
-        let response = manager.call_tool(name, Some(input.clone())).await
-            .map_err(|e| e.to_string())?;
-        
+        // Fast path: tool already discovered
+        let result = manager.call_tool(name, Some(input.clone())).await;
+
+        let response = match result {
+            // Tool not in index yet — discover all tools then retry once
+            Err(swarm_runtime::McpServerManagerError::UnknownTool { .. }) => {
+                manager.discover_tools().await.map_err(|e| e.to_string())?;
+                manager.call_tool(name, Some(input.clone()))
+                    .await
+                    .map_err(|e| e.to_string())?
+            }
+            Err(e) => return Err(e.to_string()),
+            Ok(r) => r,
+        };
+
         if let Some(error) = response.error {
-            return Err(format!("MCP Error: {} ({})", error.message, error.code));
+            return Err(format!("MCP Error {}: {}", error.code, error.message));
         }
 
         let result = response.result.ok_or("MCP server returned no result")?;
-        let mut output = String::new();
-        for content in result.content {
-            if content.kind == "text" {
-                if let Some(text) = content.data.get("text").and_then(|v| v.as_str()) {
-                    output.push_str(text);
-                }
-            }
+
+        if result.is_error == Some(true) {
+            let msg = result.content.iter()
+                .filter(|c| c.kind == "text")
+                .filter_map(|c| c.data.get("text").and_then(|v| v.as_str()))
+                .collect::<Vec<_>>()
+                .join("\n");
+            return Err(format!("MCP tool returned error: {msg}"));
         }
-        Ok(output)
+
+        // Prefer structured content if present
+        if let Some(structured) = result.structured_content {
+            return Ok(serde_json::to_string_pretty(&structured)
+                .unwrap_or_else(|_| structured.to_string()));
+        }
+
+        // Fall back to concatenated text blocks
+        let text = result.content.iter()
+            .filter(|c| c.kind == "text")
+            .filter_map(|c| c.data.get("text").and_then(|v| v.as_str()))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        if text.is_empty() {
+            Ok("(MCP tool executed — no text output)".to_string())
+        } else {
+            Ok(text)
+        }
     })
 }
+
+fn run_list_mcp_resources(input: ListMcpResourcesInput) -> Result<String, String> {
+    let manager_arc = global_mcp_manager()
+        .ok_or_else(|| "MCP manager is not initialized.".to_string())?;
+    let mut manager = manager_arc.lock().map_err(|e| e.to_string())?;
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    rt.block_on(async {
+        let resources = manager
+            .list_resources(&input.server_name)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if resources.is_empty() {
+            return Ok(format!(
+                "No resources exposed by MCP server '{}'.",
+                input.server_name
+            ));
+        }
+
+        let lines: Vec<String> = resources
+            .iter()
+            .map(|r| {
+                let name = r.name.as_deref().unwrap_or("<unnamed>");
+                let desc = r.description.as_deref().unwrap_or("");
+                let mime = r.mime_type.as_deref().unwrap_or("unknown");
+                if desc.is_empty() {
+                    format!("- {} [{}] ({})", r.uri, mime, name)
+                } else {
+                    format!("- {} [{}] ({}) — {}", r.uri, mime, name, desc)
+                }
+            })
+            .collect();
+
+        Ok(format!(
+            "Resources from '{}':\n{}",
+            input.server_name,
+            lines.join("\n")
+        ))
+    })
+}
+
+fn run_read_mcp_resource(input: ReadMcpResourceInput) -> Result<String, String> {
+    let manager_arc = global_mcp_manager()
+        .ok_or_else(|| "MCP manager is not initialized.".to_string())?;
+    let mut manager = manager_arc.lock().map_err(|e| e.to_string())?;
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    rt.block_on(async {
+        let result = manager
+            .read_resource(&input.server_name, &input.uri)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if result.contents.is_empty() {
+            return Ok(format!("Resource '{}' returned no content.", input.uri));
+        }
+
+        let parts: Vec<String> = result.contents.iter().map(|c| {
+            let mime = c.mime_type.as_deref().unwrap_or("text/plain");
+            if let Some(text) = &c.text {
+                format!("[{}] {}\n{}", mime, c.uri, text)
+            } else if let Some(blob) = &c.blob {
+                format!("[{} / base64] {} ({} bytes encoded)", mime, c.uri, blob.len())
+            } else {
+                format!("[{}] {} — (empty)", mime, c.uri)
+            }
+        }).collect();
+
+        Ok(parts.join("\n\n---\n\n"))
+    })
+}
+
 
 fn from_value<T: for<'de> Deserialize<'de>>(input: &Value) -> Result<T, String> {
     serde_json::from_value(input.clone()).map_err(|error| error.to_string())

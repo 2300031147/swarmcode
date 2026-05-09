@@ -478,6 +478,121 @@ impl McpServerManager {
         Ok(response)
     }
 
+    /// List all resources exposed by a specific MCP server.
+    pub async fn list_resources(
+        &mut self,
+        server_name: &str,
+    ) -> Result<Vec<McpResource>, McpServerManagerError> {
+        self.ensure_server_ready(server_name).await?;
+        let mut all_resources = Vec::new();
+        let mut cursor = None;
+
+        loop {
+            let request_id = self.take_request_id();
+            let response = {
+                let server = self.server_mut(server_name)?;
+                let process = server.process.as_mut().ok_or_else(|| {
+                    McpServerManagerError::InvalidResponse {
+                        server_name: server_name.to_string(),
+                        method: "resources/list",
+                        details: "server process missing".to_string(),
+                    }
+                })?;
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(30),
+                    process.list_resources(
+                        request_id,
+                        Some(McpListResourcesParams {
+                            cursor: cursor.clone(),
+                        }),
+                    ),
+                )
+                .await
+                .map_err(|_| McpServerManagerError::Timeout {
+                    server_name: server_name.to_string(),
+                })?
+                .map_err(McpServerManagerError::Io)?
+            };
+
+            if let Some(error) = response.error {
+                return Err(McpServerManagerError::JsonRpc {
+                    server_name: server_name.to_string(),
+                    method: "resources/list",
+                    error,
+                });
+            }
+
+            let result =
+                response
+                    .result
+                    .ok_or_else(|| McpServerManagerError::InvalidResponse {
+                        server_name: server_name.to_string(),
+                        method: "resources/list",
+                        details: "missing result payload".to_string(),
+                    })?;
+
+            all_resources.extend(result.resources);
+
+            match result.next_cursor {
+                Some(next) => cursor = Some(next),
+                None => break,
+            }
+        }
+
+        Ok(all_resources)
+    }
+
+    /// Read a single resource by URI from a specific MCP server.
+    pub async fn read_resource(
+        &mut self,
+        server_name: &str,
+        uri: &str,
+    ) -> Result<McpReadResourceResult, McpServerManagerError> {
+        self.ensure_server_ready(server_name).await?;
+        let request_id = self.take_request_id();
+
+        let response = {
+            let server = self.server_mut(server_name)?;
+            let process = server.process.as_mut().ok_or_else(|| {
+                McpServerManagerError::InvalidResponse {
+                    server_name: server_name.to_string(),
+                    method: "resources/read",
+                    details: "server process missing".to_string(),
+                }
+            })?;
+            tokio::time::timeout(
+                std::time::Duration::from_secs(30),
+                process.read_resource(
+                    request_id,
+                    McpReadResourceParams {
+                        uri: uri.to_string(),
+                    },
+                ),
+            )
+            .await
+            .map_err(|_| McpServerManagerError::Timeout {
+                server_name: server_name.to_string(),
+            })?
+            .map_err(McpServerManagerError::Io)?
+        };
+
+        if let Some(error) = response.error {
+            return Err(McpServerManagerError::JsonRpc {
+                server_name: server_name.to_string(),
+                method: "resources/read",
+                error,
+            });
+        }
+
+        response
+            .result
+            .ok_or_else(|| McpServerManagerError::InvalidResponse {
+                server_name: server_name.to_string(),
+                method: "resources/read",
+                details: "missing result payload".to_string(),
+            })
+    }
+
     pub async fn shutdown(&mut self) -> Result<(), McpServerManagerError> {
         let server_names = self.servers.keys().cloned().collect::<Vec<_>>();
         for server_name in server_names {

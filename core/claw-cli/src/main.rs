@@ -2903,11 +2903,23 @@ fn build_system_prompt() -> Result<Vec<String>, Box<dyn std::error::Error>> {
     )?)
 }
 
+fn init_mcp_from_config(config: &swarm_runtime::RuntimeConfig) {
+    use std::sync::{Arc, Mutex};
+    use swarm_runtime::{McpServerManager};
+    use swarm_tools::register_global_mcp_manager;
+
+    let manager = Arc::new(Mutex::new(
+        McpServerManager::from_runtime_config(config)
+    ));
+    register_global_mcp_manager(manager);
+}
+
 fn build_runtime_plugin_state(
 ) -> Result<(swarm_runtime::RuntimeFeatureConfig, GlobalToolRegistry), Box<dyn std::error::Error>> {
     let cwd = env::current_dir()?;
     let loader = ConfigLoader::default_for(&cwd);
     let runtime_config = loader.load()?;
+    init_mcp_from_config(&runtime_config);
     let plugin_manager = build_plugin_manager(&cwd, &loader, &runtime_config);
     let tool_registry = GlobalToolRegistry::with_plugin_tools(plugin_manager.aggregated_tools()?)?;
     Ok((runtime_config.feature_config().clone(), tool_registry))
