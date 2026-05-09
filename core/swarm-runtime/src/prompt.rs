@@ -133,7 +133,19 @@ impl SystemPromptBuilder {
         self.config = Some(config);
         self
     }
+}
 
+impl From<Vec<String>> for SystemPromptBuilder {
+    fn from(sections: Vec<String>) -> Self {
+        let mut b = SystemPromptBuilder::new();
+        for s in sections {
+            b = b.append_section(s);
+        }
+        b
+    }
+}
+
+impl SystemPromptBuilder {
     #[must_use]
     pub fn with_memories(mut self, memories: std::collections::HashMap<String, Vec<String>>) -> Self {
         self.memories = Some(memories);

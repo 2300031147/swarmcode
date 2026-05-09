@@ -792,7 +792,7 @@ mod tests {
             SingleCallApiClient,
             StaticToolExecutor::new(),
             PermissionPolicy::new(PermissionMode::WorkspaceWrite),
-            vec!["system".to_string()],
+            vec!["system".to_string()].into(),
         );
 
         let summary = runtime
@@ -839,7 +839,7 @@ mod tests {
                 panic!("tool should not execute when hook denies")
             }),
             PermissionPolicy::new(PermissionMode::DangerFullAccess),
-            vec!["system".to_string()],
+            vec!["system".to_string()].into(),
             RuntimeFeatureConfig::default().with_hooks(RuntimeHookConfig::new(
                 vec![shell_snippet("printf 'blocked by hook'; exit 2")],
                 Vec::new(),
@@ -905,7 +905,7 @@ mod tests {
             TwoCallApiClient { calls: 0 },
             StaticToolExecutor::new().register("add", |_input| Ok("4".to_string())),
             PermissionPolicy::new(PermissionMode::DangerFullAccess),
-            vec!["system".to_string()],
+            vec!["system".to_string()].into(),
             RuntimeFeatureConfig::default().with_hooks(RuntimeHookConfig::new(
                 vec![shell_snippet("printf 'pre hook ran'")],
                 vec![shell_snippet("printf 'post hook ran'")],
@@ -976,7 +976,7 @@ mod tests {
             SimpleApi,
             StaticToolExecutor::new(),
             PermissionPolicy::new(PermissionMode::DangerFullAccess),
-            vec!["system".to_string()],
+            vec!["system".to_string()].into(),
         );
 
         assert_eq!(runtime.usage().turns(), 1);
@@ -1003,7 +1003,7 @@ mod tests {
             SimpleApi,
             StaticToolExecutor::new(),
             PermissionPolicy::new(PermissionMode::DangerFullAccess),
-            vec!["system".to_string()],
+            vec!["system".to_string()].into(),
         );
         runtime.run_turn("a", None).expect("turn a");
         runtime.run_turn("b", None).expect("turn b");

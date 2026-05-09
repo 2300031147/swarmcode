@@ -2074,7 +2074,7 @@ fn resolve_skill_path(skill: &str) -> Result<std::path::PathBuf, String> {
 }
 
 fn get_default_agent_model() -> String {
-    std::env::var("SWARM_AGENT_MODEL").unwrap_or_else(|_| "swarm-model-opus".to_string())
+    std::env::var("CLAWSWARM_AGENT_MODEL").unwrap_or_else(|_| "llama3.2".to_string())
 }
 
 const DEFAULT_AGENT_SYSTEM_DATE: &str = "2026-03-31";
