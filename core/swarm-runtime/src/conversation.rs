@@ -207,6 +207,7 @@ where
 
             // ── Agent Teams: drain team messages ────────────────────
             if let (Some(hub), Some(my_id)) = (&self.team_hub, &self.agent_id) {
+                hub.heartbeat(my_id);
                 let incoming = hub.drain_inbox(my_id);
                 if !incoming.is_empty() {
                     let lines: Vec<String> = incoming

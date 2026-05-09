@@ -482,7 +482,7 @@ fn client_runtime_block_on<F, T>(future: F) -> Result<T, ApiError>
 where
     F: std::future::Future<Output = Result<T, ApiError>>,
 {
-    tokio::swarm_runtime::swarm_runtime::new()
+    tokio::runtime::Runtime::new()
         .map_err(ApiError::from)?
         .block_on(future)
 }

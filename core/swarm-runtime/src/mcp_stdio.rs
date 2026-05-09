@@ -833,7 +833,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use serde_json::json;
-    use tokio::swarm_runtime::Builder;
+    use tokio::runtime::Builder;
 
     use crate::config::{
         ConfigSource, McpRemoteServerConfig, McpSdkServerConfig, McpServerConfig,

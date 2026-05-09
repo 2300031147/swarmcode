@@ -625,7 +625,7 @@ fn run_login() -> Result<(), Box<dyn std::error::Error>> {
     let client = ClawApiClient::from_auth(AuthSource::None).with_base_url(swarm_api::read_base_url());
     let exchange_request =
         OAuthTokenExchangeRequest::from_config(oauth, code, state, pkce.verifier, redirect_uri);
-    let runtime = tokio::swarm_runtime::swarm_runtime::new()?;
+    let runtime = tokio::runtime::Runtime::new()?;
     let token_set = runtime.block_on(client.exchange_oauth_code(oauth, &exchange_request))?;
     save_oauth_credentials(&swarm_runtime::OAuthTokenSet {
         access_token: token_set.access_token,
@@ -3355,7 +3355,7 @@ impl swarm_runtime::PermissionPrompter for CliPermissionPrompter {
 }
 
 struct DefaultRuntimeClient {
-    runtime: tokio::swarm_runtime::Runtime,
+    runtime: tokio::runtime::Runtime,
     client: ClawApiClient,
     model: String,
     enable_tools: bool,
@@ -3375,7 +3375,7 @@ impl DefaultRuntimeClient {
         progress_reporter: Option<InternalPromptProgressReporter>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self {
-            runtime: tokio::swarm_runtime::swarm_runtime::new()?,
+            runtime: tokio::runtime::Runtime::new()?,
             client: ClawApiClient::from_auth(resolve_cli_auth_source()?)
                 .with_base_url(swarm_api::read_base_url()),
             model,
