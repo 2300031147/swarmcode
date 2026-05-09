@@ -294,7 +294,7 @@ impl SwarmHive {
         {
             let mut inner = self.inner.lock().expect("SwarmHive lock poisoned");
             for member in inner.members.values_mut() {
-                if member.status == HiveMemberStatus::Active && (now - member.last_seen_epoch_ms) > 60_000 {
+                if member.status == HiveMemberStatus::Active && (now - member.last_seen_epoch_ms) > 300_000 {
                     member.status = HiveMemberStatus::Failed;
                     changed = true;
                 }
@@ -302,6 +302,15 @@ impl SwarmHive {
         }
         if changed {
             self.sync_members_to_disk();
+        }
+    }
+    
+    /// Update the 'last_seen' timestamp for a member to prevent pruning.
+    pub fn heartbeat(&self, agent_id: &str) {
+        if let Ok(mut inner) = self.inner.lock() {
+            if let Some(member) = inner.members.get_mut(agent_id) {
+                member.last_seen_epoch_ms = epoch_ms_now();
+            }
         }
     }
 

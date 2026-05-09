@@ -113,17 +113,39 @@ pub async fn chat_send_message(
     // Build the client and send
     let client = ProviderClient::from_model(&model).map_err(|e| e.to_string())?;
     
-    // ── Swarm Hardening: Content Block Processing ───────────────────────
-    // We recreate the assistant message using the block builder we hardened
-    let assistant_events = client.stream(&request).map_err(|e| e.to_string())?;
-    let (convo_msg, usage_info) = swarm_runtime::build_assistant_message(assistant_events)
+    let mut stream = client.stream_message(&request).await.map_err(|e| e.to_string())?;
+    let mut events = Vec::new();
+    
+    while let Some(event) = stream.next_event().await.map_err(|e| e.to_string())? {
+        match event {
+            swarm_api::StreamEvent::ContentBlockDelta(delta) => {
+                if let swarm_api::ContentBlockDelta::TextDelta { text } = delta.delta {
+                    events.push(swarm_runtime::AssistantEvent::TextDelta(text));
+                }
+            }
+            swarm_api::StreamEvent::MessageDelta(delta) => {
+                events.push(swarm_runtime::AssistantEvent::Usage(swarm_runtime::TokenUsage {
+                    input_tokens: delta.usage.input_tokens,
+                    output_tokens: delta.usage.output_tokens,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                }));
+            }
+            swarm_api::StreamEvent::MessageStop(_) => {
+                events.push(swarm_runtime::AssistantEvent::MessageStop);
+            }
+            _ => {}
+        }
+    }
+
+    let (convo_msg, usage_info) = swarm_runtime::build_assistant_message(events)
         .map_err(|e| e.to_string())?;
     
     // We serialize the blocks to JSON so the frontend can parse them
     let assistant_content = convo_msg.to_json().render();
     
-    let tokens_in = usage_info.map(|u| u.input_tokens).unwrap_or(0);
-    let tokens_out = usage_info.map(|u| u.output_tokens).unwrap_or(0);
+    let tokens_in = usage_info.as_ref().map(|u| u.input_tokens).unwrap_or(0);
+    let tokens_out = usage_info.as_ref().map(|u| u.output_tokens).unwrap_or(0);
 
     // Build the reply message
     let reply = ChatMessage {

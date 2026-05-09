@@ -40,8 +40,8 @@ pub use config::{
     RuntimePluginConfig, ScopedMcpServerConfig, SWARM_SETTINGS_SCHEMA,
 };
 pub use conversation::{
-    ApiClient, ApiRequest, AssistantEvent, ConversationRuntime, RuntimeError, StaticToolExecutor,
-    ToolError, ToolExecutor, TurnSummary,
+    build_assistant_message, ApiClient, ApiRequest, AssistantEvent, ConversationRuntime,
+    RuntimeError, StaticToolExecutor, ToolError, ToolExecutor, TurnSummary,
 };
 pub use file_ops::{
     edit_file, glob_search, grep_search, read_file, write_file, EditFileOutput, GlobSearchOutput,

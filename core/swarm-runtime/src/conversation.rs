@@ -323,8 +323,11 @@ where
                 // ── Platform Security: Adversary Inspection ─────────────
                 // Only run for "High Risk" tools or if patterns had any warnings
                 if tool_name == "bash" || !matches.is_empty() {
-                    let decision = AdversaryInspector::new(&mut self.api_client)
-                        .inspect(&tool_name, &input, &self.session.messages);
+                    let decision = {
+                        let client = &mut self.api_client;
+                        let history = &self.session.messages;
+                        AdversaryInspector::new(client).inspect(&tool_name, &input, history)
+                    };
 
                     if let Ok(AdversaryDecision::Block { reason }) = decision {
                         let security_error = format!("🛡️ Adversary Blocked: {reason}");
@@ -505,7 +508,7 @@ where
     }
 }
 
-fn build_assistant_message(
+pub fn build_assistant_message(
     events: Vec<AssistantEvent>,
 ) -> Result<(ConversationMessage, Option<TokenUsage>), RuntimeError> {
     let mut text_acc = String::new();

@@ -823,7 +823,7 @@ fn run_browser(input: BrowserInput) -> Result<String, String> {
     let mut agent = agent_arc.lock().map_err(|e| e.to_string())?;
     
     // Create a new tokio runtime or use the current handle to block on the async browser task 
-    let rt = tokio::swarm_runtime::Handle::current();
+    let rt = tokio::runtime::Handle::current();
     rt.block_on(async {
         agent.execute_task(&input.url, &input.task).await
             .map_err(|e| e.to_string())
@@ -2073,7 +2073,10 @@ fn resolve_skill_path(skill: &str) -> Result<std::path::PathBuf, String> {
     Err(format!("unknown skill: {requested}"))
 }
 
-const DEFAULT_AGENT_MODEL: &str = "swarm-model-opus";
+fn get_default_agent_model() -> String {
+    std::env::var("SWARM_AGENT_MODEL").unwrap_or_else(|_| "swarm-model-opus".to_string())
+}
+
 const DEFAULT_AGENT_SYSTEM_DATE: &str = "2026-03-31";
 const DEFAULT_AGENT_MAX_ITERATIONS: usize = 32;
 
@@ -2270,16 +2273,19 @@ fn build_agent_runtime(
         .manifest
         .model
         .clone()
-        .unwrap_or_else(|| DEFAULT_AGENT_MODEL.to_string());
+        .unwrap_or_else(get_default_agent_model);
     let allowed_tools = job.allowed_tools.clone();
-    let api_client = ProviderRuntimeClient::new(model, allowed_tools.clone())?;
+    let api_client = ProviderRuntimeClient::new(model.clone(), allowed_tools.clone())?;
     let tool_executor = SubagentToolExecutor::new(allowed_tools);
+    let mut system_prompt = job.system_prompt.clone();
+    system_prompt = system_prompt.with_master_model_name(&model);
+
     let mut runtime = ConversationRuntime::new(
         Session::new(),
         api_client,
         tool_executor,
         agent_permission_policy(),
-        job.system_prompt.clone(),
+        system_prompt,
     );
 
     if let Some(hub) = crate::global_team_hub() {
@@ -2325,7 +2331,7 @@ fn resolve_agent_model(model: Option<&str>) -> String {
     model
         .map(str::trim)
         .filter(|model| !model.is_empty())
-        .unwrap_or(DEFAULT_AGENT_MODEL)
+        .unwrap_or_else(get_default_agent_model)
         .to_string()
 }
 
@@ -2467,7 +2473,7 @@ fn format_agent_terminal_output(status: &str, result: Option<&str>, error: Optio
 }
 
 struct ProviderRuntimeClient {
-    runtime: tokio::swarm_runtime::Runtime,
+    runtime: tokio::runtime::Runtime,
     client: ProviderClient,
     model: String,
     allowed_tools: BTreeSet<String>,
@@ -2478,7 +2484,7 @@ impl ProviderRuntimeClient {
         let model = resolve_model_alias(&model).to_string();
         let client = ProviderClient::from_model(&model).map_err(|error| error.to_string())?;
         Ok(Self {
-            runtime: tokio::swarm_runtime::swarm_runtime::new().map_err(|error| error.to_string())?,
+            runtime: tokio::runtime::Runtime::new().map_err(|error| error.to_string())?,
             client,
             model,
             allowed_tools,
@@ -3757,6 +3763,7 @@ mod tests {
         execute_tool, final_assistant_text, mvp_tool_specs, persist_agent_terminal_state,
         push_output_block, AgentInput, AgentJob, SubagentToolExecutor,
     };
+
     use swarm_api::OutputContentBlock;
     use swarm_runtime::{ApiRequest, AssistantEvent, ConversationRuntime, RuntimeError, Session};
     use serde_json::json;

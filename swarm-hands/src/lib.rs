@@ -4,6 +4,11 @@ use chromiumoxide::{Browser, BrowserConfig, Page};
 use std::error::Error;
 use futures::StreamExt;
 use tokio::time::{sleep, Duration};
+use std::sync::OnceLock;
+use std::path::PathBuf;
+
+static CHROMIUM_PATH: OnceLock<PathBuf> = OnceLock::new();
+
 
 /// The primary interface mirroring the `Hands-main` TS/Bun DOM extraction architecture.
 /// Binds directly to headless chrome using CDP (Chrome DevTools Protocol).
@@ -38,15 +43,22 @@ impl WebAgent {
     pub async fn execute_task(&mut self, url: &str, task: &str, show_browser: bool) -> Result<(), Box<dyn Error>> {
         println!("🚀 Spawning Chromiumoxide daemon for: {}", url);
         
-        println!(">> Automatically downloading Chromium binary dependencies (if missing)...");
-        let fetcher = chromiumoxide::fetcher::BrowserFetcher::new(
-            chromiumoxide::fetcher::BrowserFetcherOptions::builder().build().unwrap()
-        );
-        let browser_info = fetcher.fetch().await.map_err(|e| format!("Browser fetch failed: {}", e))?;
+        let chromium_path = if let Some(path) = CHROMIUM_PATH.get() {
+            path.clone()
+        } else {
+            println!(">> Automatically downloading Chromium binary dependencies (if missing)...");
+            let fetcher = chromiumoxide::fetcher::BrowserFetcher::new(
+                chromiumoxide::fetcher::BrowserFetcherOptions::builder().build().unwrap()
+            );
+            let browser_info = fetcher.fetch().await.map_err(|e| format!("Browser fetch failed: {}", e))?;
+            let path = browser_info.executable_path;
+            CHROMIUM_PATH.set(path.clone()).ok();
+            path
+        };
         
         let mut builder = BrowserConfig::builder()
             .window_size(1920, 1080)
-            .chrome_executable(browser_info.executable_path);
+            .chrome_executable(chromium_path);
             
         if show_browser {
             builder = builder.with_head(); // Visible window mode
