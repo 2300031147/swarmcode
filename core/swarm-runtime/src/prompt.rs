@@ -93,12 +93,19 @@ pub struct SystemPromptBuilder {
     config: Option<RuntimeConfig>,
     memories: Option<std::collections::HashMap<String, Vec<String>>>,
     past_session_context: Option<String>,
+    master_model_name: Option<String>,
 }
 
 impl SystemPromptBuilder {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    #[must_use]
+    pub fn with_master_model_name(mut self, name: impl Into<String>) -> Self {
+        self.master_model_name = Some(name.into());
+        self
     }
 
     #[must_use]
@@ -207,7 +214,7 @@ impl SystemPromptBuilder {
         );
         let mut lines = vec!["# Environment context".to_string()];
         lines.extend(prepend_bullets(vec![
-            format!("Model family: {SWARM_MASTER_MODEL_NAME}"),
+            format!("Model family: {}", self.master_model_name.as_deref().unwrap_or(SWARM_MASTER_MODEL_NAME)),
             format!("Working directory: {cwd}"),
             format!("Date: {date}"),
             format!(

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::Utc;
+
 use crate::conversation::{ApiClient, ApiRequest, AssistantEvent};
 use crate::session::{ConversationMessage, ContentBlock};
 use crate::usage::TokenUsage;

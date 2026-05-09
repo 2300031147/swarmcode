@@ -107,6 +107,9 @@ struct SwarmHiveInner {
     /// [INTEGRATION] Optional listener for network-scale broadcasts.
     #[serde(skip)]
     listener: Option<Box<dyn Fn(HiveMessage) + Send + Sync>>,
+    /// Notify waiters when a new message arrives.
+    #[serde(skip)]
+    message_condvar: std::sync::Arc<std::sync::Condvar>,
 }
 
 impl SwarmHive {
@@ -124,8 +127,22 @@ impl SwarmHive {
                 tasks: BTreeMap::new(),
                 last_synced_idx: 0,
                 listener: None,
+                message_condvar: std::sync::Arc::new(std::sync::Condvar::new()),
             }),
         }
+    }
+
+    /// Return the condvar used for message notifications.
+    pub fn message_condvar(&self) -> std::sync::Arc<std::sync::Condvar> {
+        let inner = self.inner.lock().expect("SwarmHive lock poisoned");
+        inner.message_condvar.clone()
+    }
+
+    /// Block the current thread until a message arrives or timeout.
+    pub fn wait_for_messages(&self, timeout: std::time::Duration) {
+        let condvar = self.message_condvar();
+        let inner = self.inner.lock().expect("SwarmHive lock poisoned");
+        let _ = condvar.wait_timeout(inner, timeout).ok();
     }
 
     /// Enable file-backed persistence for this hub.
@@ -359,6 +376,7 @@ impl SwarmHive {
                 .ok_or_else(|| format!("unknown teammate: {recipient}"))?;
             inbox.push(message.clone());
             inner.log.push(message);
+            inner.message_condvar.notify_all();
         }
         self.sync_to_disk();
         Ok(())
@@ -380,6 +398,7 @@ impl SwarmHive {
                 }
             }
             inner.log.push(message);
+            inner.message_condvar.notify_all();
         }
         self.sync_to_disk();
     }
@@ -464,8 +483,10 @@ impl SwarmHive {
             if let Ok(content) = fs::read_to_string(members_path) {
                 if let Ok(members) = serde_json::from_str::<BTreeMap<String, HiveMember>>(&content) {
                     for (id, member) in members {
-                        inner.members.insert(id.clone(), member);
-                        inner.inboxes.entry(id).or_default();
+                        if !inner.members.contains_key(&id) {
+                            inner.members.insert(id.clone(), member);
+                            inner.inboxes.entry(id).or_default();
+                        }
                     }
                 }
             }
@@ -509,8 +530,11 @@ impl SwarmHive {
     where
         F: FnOnce() -> T,
     {
-        let inner = self.inner.lock().expect("SwarmHive lock poisoned");
-        let Some(team_dir) = &inner.team_dir else {
+        let team_dir = {
+            let inner = self.inner.lock().expect("SwarmHive lock poisoned");
+            inner.team_dir.clone()
+        };
+        let Some(team_dir) = team_dir else {
             return Ok(f());
         };
 

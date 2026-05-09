@@ -151,8 +151,8 @@ impl TokenUsage {
     }
 }
 
-fn cost_for_tokens(tokens: u32, usd_per_million_tokens: f64) -> f64 {
-    f64::from(tokens) / 1_000_000.0 * usd_per_million_tokens
+fn cost_for_tokens(tokens: u64, usd_per_million_tokens: f64) -> f64 {
+    (tokens as f64) / 1_000_000.0 * usd_per_million_tokens
 }
 
 #[must_use]

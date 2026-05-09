@@ -113,7 +113,11 @@ pub fn agents_send_message(
         to.as_deref(),
         &message,
     );
-    hive.broadcast(msg);
+    if to.is_some() {
+        hive.send_to(msg).map_err(|e| e.to_string())?;
+    } else {
+        hive.broadcast(msg);
+    }
     Ok("Message sent to hive.".to_string())
 }
 

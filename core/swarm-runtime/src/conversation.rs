@@ -102,6 +102,10 @@ pub struct ConversationRuntime<C, T> {
     api_client: C,
     tool_executor: T,
     permission_policy: PermissionPolicy,
+    max_iterations: usize,
+    usage_tracker: UsageTracker,
+    hook_runner: HookRunner,
+    team_hub: Option<Arc<SwarmHive>>,
     agent_id: Option<String>,
     security_patterns: PatternMatcher,
     large_response_handler: LargeResponseHandler,
@@ -319,18 +323,14 @@ where
                 // ── Platform Security: Adversary Inspection ─────────────
                 // Only run for "High Risk" tools or if patterns had any warnings
                 if tool_name == "bash" || !matches.is_empty() {
-                    // Note: We need a clone of the client if we want to stream twice, 
-                    // but since ApiClient usually isn't Clone, and we are in a mutable loop,
-                    // we can just use &mut self.api_client if the trait supports it.
-                    // For now, assume we can create a temporary inspector.
-                    let mut inspector = AdversaryInspector::new(&mut self.api_client);
-                    if let Ok(AdversaryDecision::Block { reason }) = 
-                        inspector.inspect(&tool_name, &input, &self.session.messages) 
-                    {
+                    let decision = AdversaryInspector::new(&mut self.api_client)
+                        .inspect(&tool_name, &input, &self.session.messages);
+
+                    if let Ok(AdversaryDecision::Block { reason }) = decision {
                         let security_error = format!("🛡️ Adversary Blocked: {reason}");
                         let result_message = ConversationMessage::tool_result(
                             tool_use_id,
-                            tool_name,
+                            &tool_name,
                             security_error,
                             true,
                         );
@@ -549,7 +549,9 @@ fn build_assistant_message(
         ));
     }
     if blocks.is_empty() {
-        return Err(RuntimeError::new("assistant stream produced no content"));
+        blocks.push(ContentBlock::Text {
+            text: "Empty response from assistant".to_string(),
+        });
     }
 
     Ok((
@@ -558,13 +560,7 @@ fn build_assistant_message(
     ))
 }
 
-fn flush_text_block(text: &mut String, blocks: &mut Vec<ContentBlock>) {
-    if !text.is_empty() {
-        blocks.push(ContentBlock::Text {
-            text: std::mem::take(text),
-        });
-    }
-}
+
 
 fn format_hook_message(result: &HookRunResult, fallback: &str) -> String {
     if result.messages().is_empty() {

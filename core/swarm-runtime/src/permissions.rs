@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use crate::platform_security::{PatternMatcher, RiskLevel};
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PermissionMode {
@@ -96,12 +96,7 @@ impl PermissionPolicy {
         let current_mode = self.active_mode();
         let required_mode = self.required_mode_for(tool_name);
         
-        // ── Smart Intent Detection ──────────────────────────────────────
-        // If a "Dangerous" tool is used for a "Safe" operation, we can effectively
-        // treat it as ReadOnly if it passes our security scan.
-        let effective_required_mode = required_mode;
-
-        if current_mode == PermissionMode::Allow || current_mode >= effective_required_mode {
+        if current_mode == PermissionMode::Allow || current_mode >= required_mode {
             return PermissionOutcome::Allow;
         }
 
