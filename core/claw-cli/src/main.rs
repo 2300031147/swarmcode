@@ -1226,6 +1226,11 @@ impl LiveCli {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let system_prompt = build_system_prompt()?;
         let session = create_managed_session_handle()?;
+
+        // Initialize the global web agent for browser access
+        use swarm_tools::{init_global_web_agent, WebAgent};
+        init_global_web_agent(WebAgent::new());
+
         let mut runtime = build_runtime(
             Session::new(),
             model.clone(),

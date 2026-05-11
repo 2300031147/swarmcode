@@ -19,7 +19,7 @@ use swarm_runtime::{
     ToolExecutor, team_message, UsageTracker,
 };
 use swarm_senses::CodeGraph;
-use swarm_hands::WebAgent;
+pub use swarm_hands::WebAgent;
 use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -944,19 +944,27 @@ struct BrowserInput {
 
 fn run_browser(input: BrowserInput) -> Result<String, String> {
     let agent_arc = global_web_agent()
-        .ok_or_else(|| "Hands daemon is not initialized.".to_string())?;
-    
-    // We run the async task inside the multi-threaded tokio runtime 
-    let mut agent = agent_arc.lock().map_err(|e| e.to_string())?;
-    
-    // Create a new tokio runtime or use the current handle to block on the async browser task 
-    let rt = tokio::runtime::Handle::current();
-    rt.block_on(async {
-        agent.execute_task(&input.url, &input.task).await
-            .map_err(|e| e.to_string())
-    })?;
+        .ok_or("WebAgent not initialized. Call init_global_web_agent() at startup.")?;
 
-    Ok(format!("Browser task complete. Result stored in memory locks. Current URL: {}", agent.current_url))
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    rt.block_on(async {
+        let mut agent = agent_arc.lock().map_err(|e| e.to_string())?;
+        agent
+            .execute_task(&input.url, &input.task, false)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        Ok(format!(
+            "Browser task complete.\nURL: {}\nResult: {}\n\nPage snapshot:\n{}",
+            agent.current_url,
+            agent.last_result,
+            agent.dom_snapshot.chars().take(2000).collect::<String>()
+        ))
+    })
 }
 
 fn run_bash(input: BashCommandInput) -> Result<String, String> {
@@ -2519,6 +2527,21 @@ pub fn allowed_tools_for_subagent(subagent_type: &str) -> BTreeSet<String> {
             "grep_search",
             "ToolSearch",
         ],
+
+        // NEW: dedicated web agent type
+        "WebAgent" => {
+            let mut tools = vec![
+                "Browser",
+                "WebFetch",
+                "WebSearch",
+                "StructuredOutput",
+                "SendUserMessage",
+                "TodoWrite",
+            ];
+            tools.extend(team_tools);
+            tools
+        }
+
         _ => vec![
             "bash",
             "read_file",
@@ -2526,6 +2549,7 @@ pub fn allowed_tools_for_subagent(subagent_type: &str) -> BTreeSet<String> {
             "edit_file",
             "glob_search",
             "grep_search",
+            "Browser",
             "WebFetch",
             "WebSearch",
             "TodoWrite",

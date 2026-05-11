@@ -1,8 +1,5 @@
 use serde::{Deserialize, Serialize};
 use swarm_hands::WebAgent;
-use tauri::State;
-
-// ── Types ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HandsTaskRequest {
@@ -11,16 +8,26 @@ pub struct HandsTaskRequest {
     pub show_browser: bool,
 }
 
-// ── Commands ──────────────────────────────────────────────────────────────
+#[derive(Debug, Serialize)]
+pub struct HandsTaskResult {
+    pub url: String,
+    pub result: String,
+    pub dom_snapshot: String,
+}
 
 #[tauri::command]
-pub async fn hands_run_agent(req: HandsTaskRequest) -> Result<String, String> {
-    println!("🤖 SwarmHands: Starting agent task on: {}", req.url);
-    
-    // We now properly pipe the frontend toggle down to Chromiumoxide
+pub async fn hands_run_agent(req: HandsTaskRequest) -> Result<HandsTaskResult, String> {
+    println!("🤖 SwarmHands: task='{}' url='{}'", req.task, req.url);
+
     let mut agent = WebAgent::new();
-    agent.execute_task(&req.url, &req.task, req.show_browser).await
-        .map_err(|e| format!("Browser Agent Error: {}", e))?;
-    
-    Ok(format!("Task complete. URL: {}. Result captured in DOM snapshot.", agent.current_url))
+    agent
+        .execute_task(&req.url, &req.task, req.show_browser)
+        .await
+        .map_err(|e| format!("Browser Agent Error: {e}"))?;
+
+    Ok(HandsTaskResult {
+        url: agent.current_url,
+        result: agent.last_result,
+        dom_snapshot: agent.dom_snapshot,
+    })
 }
